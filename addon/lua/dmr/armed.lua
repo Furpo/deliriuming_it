@@ -23,10 +23,10 @@ local point = CreateConVar("dmr_point", "1", FCVAR_ARCHIVE,
 	"NM's pointArm: a ragdolled NPC swings its gun arm toward its target, as GTA IV's NM peds do")
 local armStiff = CreateConVar("dmr_arm_stiffness", "14", FCVAR_ARCHIVE, "pointArm's armStiffness (NM's default 15): how hard the arm holds the aim")
 local cone = CreateConVar("dmr_aim_cone", "30", FCVAR_ARCHIVE, "Degrees: a ragdolled NPC only fires while its gun points this close to its target")
-local aimRange = CreateConVar("dmr_aim_range", "500", FCVAR_ARCHIVE, "How close (units) something has to be, in front of the NPC's head, for a ragdolled NPC to notice it")
+local aimRange = CreateConVar("dmr_aim_range", "300", FCVAR_ARCHIVE, "How close (units) something has to be, in front of the NPC's head, for a ragdolled NPC to notice it")
 local range = CreateConVar("dmr_range", "1500", FCVAR_ARCHIVE, "How far (units) away whoever hit a ragdolled NPC last still is something it shoots at")
-local chance = CreateConVar("dmr_aim_chance", "0.6", FCVAR_ARCHIVE, "The chance a ragdolled NPC that notices a target goes for it (0 to 1)")
-local aimTime = CreateConVar("dmr_aim_time", "4", FCVAR_ARCHIVE, "Seconds (on average) a ragdolled NPC keeps aiming before it loses interest for a while")
+local chance = CreateConVar("dmr_aim_chance", "0.15", FCVAR_ARCHIVE, "The chance a ragdolled NPC that notices a target goes for it (0 to 1)")
+local aimTime = CreateConVar("dmr_aim_time", "3", FCVAR_ARCHIVE, "Seconds (on average) a ragdolled NPC keeps aiming before it loses interest for a while")
 local sloppy = CreateConVar("dmr_inaccuracy", "1", FCVAR_ARCHIVE, "Scale of the extra spread from the body's motion and recent hits (0: none)")
 local stun = CreateConVar("dmr_stun", "0.8", FCVAR_ARCHIVE, "Seconds after being hit before a ragdolled NPC aims and fires again")
 

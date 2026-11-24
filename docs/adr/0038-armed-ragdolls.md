@@ -45,6 +45,16 @@ ShotTask code that would say when a downed ped may fire was not read. Measured w
 5 s of aiming in 76 s of lying, against 61 shots in 60 s before; the distances in that check were not controlled (the NPC
 walked up to the player before it was shot).
 
+## What GTA IV does (measured, 2026-11-24)
+
+Read from the running game (GTAIV.exe 1.2.0.59, offline; the ped skeletons' bone matrices recorded at 70 Hz, tools outside
+this repository): peds standing 2-10 m from the player held the gun arm on him (the arm's direction within 5-10 degrees
+of the direction to him) for tens of seconds; in four episodes where a ped went down (lying 20-80 s at 7-16 m, some dead and
+some wounded, which the data does not tell apart) the arm pointed within 25 degrees of him 0-5% of the time, the hand
+low and nearly still; two peds were propped up and moving 1.5-2 m/s for 15-20 s after going down, not aiming. So GTA IV's
+downed peds do not track the player, and the defaults now make aiming from the ground rare: `dmr_aim_chance` 0.15,
+`dmr_aim_range` 300, `dmr_aim_time` 3. Four episodes are few, and no downed ped was seen firing.
+
 ## Consequences
 
 - Measured on a downed Combine with an SMG, 60 s each (`dmr_point 0`, then `1`): 15 shots inside the cone with the arm
