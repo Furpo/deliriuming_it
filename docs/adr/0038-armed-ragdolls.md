@@ -106,3 +106,24 @@ away is lost by the existing look (`pickTarget` every 0.4 s returns nothing, the
   reached through the chest), a two-bone solve on the bones (`DMR_TwoHandIK`, cl_armed.lua, called by cl_ragdolls.lua's render).
   The forend is 60 per cent from the grip to the muzzle. Seen in frames of shot Combine with an AR2: the gun across the
   body with both arms on it. Not measured in numbers; the physical hand is where NM has it.
+
+### The gun as a body of NM's (2026-11-25)
+
+A gun that is only drawn at the hand goes through the body, the floor and the walls, and so does the hand carrying it.
+`DMR.GunAttach(model, handle, points, mass, grip)` (module/src/ragdolls.rs) makes it a body of the fork's
+(`CreateBody`, a convex hull of the weapon's physics mesh, a few kilograms at most) in the environment of the NPC's
+native body and joins it to the `Hand_Right` part (`CreateJoint`, a ball with 0.04 rad of play, anchored at the grip),
+posed at the hand bone's frame (the part's turned by the bone's `turn`, `at`), moving as the hand does. The body's
+collision pairs (`SetBodyCollisionPairs`) are NM's own plus the gun against the spine, the neck and the head (not the
+pelvis and the legs: a gun at the hip starts inside them; not the arm: it is in the hand); the world it collides with
+as any body of NM's does. `DMR.GunRemove(handle)` takes it away (the pairs set again), `DMR.GunState(handle)` says where it
+is (a test). `DMR.RagdollRemove` removes a gun first, so the joint never outlives the body. `armed.lua` attaches it when
+the NPC goes down (`dmr_gun_body`) with a mass of 0.6 (pistol) to 1.6 kg (shotgun), lighter than the real thing so the
+arm is not pulled down, and drops it when the body gets up by the clip (the module holds every part there, `FollowHold`),
+dies or is given back. The clients still draw the gun at the hand bone: the weld keeps the two together.
+
+Checked in game with real bullets into a Combine with an SMG and an AR2, a rebel with a pistol: the bodies stayed
+attached and stable, the second `GunAttach` on a body was refused (the first was there), the gun stayed 8 units from the
+hand (the hull's centre) while the body moved, and with the right arm driven across the chest the SMG lay on the vest,
+not in it. Not measured: how much a heavier gun than these changes the arm's motion, and the comparison with the gun body
+off (the body went before the check).
