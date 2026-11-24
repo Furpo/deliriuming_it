@@ -8,6 +8,11 @@
 -- dmr_aim_cone of the target. NPC and ragdoll stay as live.lua has them: the owner hidden with its weapon, hits on the
 -- ragdoll its hits.
 --
+-- It does not track the player like a turret: GTA IV's downed peds mostly do not shoot, unless the player is right in front
+-- of them. A target is only something it is hostile to within dmr_aim_range and in front of its head, or whoever hit it
+-- last (it knows who shot it) within dmr_range; it notices after a reaction time, has to want to (dmr_aim_chance), aims
+-- for a few seconds (dmr_aim_time) and then loses interest for a while.
+--
 -- Not while the body gets up by the clip (module/src/follow/retarget.rs: its parts are held on it, docs/adr/0037).
 
 local M = 0.0254
@@ -16,9 +21,12 @@ local armed = CreateConVar("dmr_armed", "1", { FCVAR_ARCHIVE, FCVAR_REPLICATED }
 	"A hostile NPC that is a ragdoll with NM (live.lua) keeps its weapon in hand and shoots back")
 local point = CreateConVar("dmr_point", "1", FCVAR_ARCHIVE,
 	"NM's pointArm: a ragdolled NPC swings its gun arm toward its target, as GTA IV's NM peds do")
-local armStiff = CreateConVar("dmr_arm_stiffness", "18", FCVAR_ARCHIVE, "pointArm's armStiffness (NM's default 15): how hard the arm holds the aim")
+local armStiff = CreateConVar("dmr_arm_stiffness", "14", FCVAR_ARCHIVE, "pointArm's armStiffness (NM's default 15): how hard the arm holds the aim")
 local cone = CreateConVar("dmr_aim_cone", "30", FCVAR_ARCHIVE, "Degrees: a ragdolled NPC only fires while its gun points this close to its target")
-local range = CreateConVar("dmr_range", "2200", FCVAR_ARCHIVE, "How far (units) a ragdolled NPC looks for something to shoot")
+local aimRange = CreateConVar("dmr_aim_range", "500", FCVAR_ARCHIVE, "How close (units) something has to be, in front of the NPC's head, for a ragdolled NPC to notice it")
+local range = CreateConVar("dmr_range", "1500", FCVAR_ARCHIVE, "How far (units) away whoever hit a ragdolled NPC last still is something it shoots at")
+local chance = CreateConVar("dmr_aim_chance", "0.6", FCVAR_ARCHIVE, "The chance a ragdolled NPC that notices a target goes for it (0 to 1)")
+local aimTime = CreateConVar("dmr_aim_time", "4", FCVAR_ARCHIVE, "Seconds (on average) a ragdolled NPC keeps aiming before it loses interest for a while")
 local sloppy = CreateConVar("dmr_inaccuracy", "1", FCVAR_ARCHIVE, "Scale of the extra spread from the body's motion and recent hits (0: none)")
 local stun = CreateConVar("dmr_stun", "0.8", FCVAR_ARCHIVE, "Seconds after being hit before a ragdolled NPC aims and fires again")
 
@@ -88,10 +96,13 @@ end)
 hook.Add("DMR_LiveEnded", "DMR_Armed", forget)
 
 -- A hit on the ragdoll is a hit on its owner: its aim is off for a moment.
-hook.Add("EntityTakeDamage", "DMR_Armed", function(ent)
+hook.Add("EntityTakeDamage", "DMR_Armed", function(ent, dmg)
 	local owner = ent.DMR_LiveOf
 	local x = IsValid(owner) and armedNpcs[owner]
-	if x then x.lastHit = CurTime() end
+	if not x then return end
+	x.lastHit = CurTime()
+	local a = dmg:GetAttacker()
+	if IsValid(a) and (a:IsPlayer() or a:IsNPC()) then x.attacker = a end
 end)
 
 -- Something the NPC is hostile to.
@@ -112,13 +123,29 @@ local function visible(x, npc, from, e)
 	return tr.Entity == e or tr.Fraction > 0.98
 end
 
+-- Where its head faces (the ragdoll's, so the NPC "looks" where its body lies).
+local function headForward(x)
+	local b = x.rag:LookupBone("ValveBiped.Bip01_Head1")
+	local m = b and x.rag:GetBoneMatrix(b)
+	return m and m:GetForward() or x.rag:GetForward()
+end
+
+-- Something it notices: whoever hit it last (within dmr_range), or something it is hostile to within dmr_aim_range and
+-- in front of its head (70 degrees); the nearest.
 local function pickTarget(x, npc, from)
-	local e = npc:GetEnemy()
-	if hostile(npc, e) and visible(x, npc, from, e) then return e end
-	local best, bd = nil, range:GetFloat() ^ 2
-	for _, c in ipairs(ents.FindInSphere(from, range:GetFloat())) do
+	local best, bd = nil, math.huge
+	local a = x.attacker
+	if hostile(npc, a) and from:DistToSqr(a:GetPos()) < range:GetFloat() ^ 2 and visible(x, npc, from, a) then
+		best, bd = a, from:DistToSqr(a:GetPos())
+	end
+	local r = aimRange:GetFloat()
+	local look = headForward(x)
+	for _, c in ipairs(ents.FindInSphere(from, r)) do
 		local d = c:GetPos():DistToSqr(from)
-		if d < bd and hostile(npc, c) and visible(x, npc, from, c) then best, bd = c, d end
+		if d < bd and hostile(npc, c) then
+			local to = (c:BodyTarget(from) - from):GetNormalized()
+			if look:Dot(to) > 0.34 and visible(x, npc, from, c) then best, bd = c, d end
+		end
 	end
 	return best
 end
@@ -155,24 +182,12 @@ local function fire(x, npc, from, gdir, toTarget)
 	x.rag:SetNW2Int("DMR_GunShot", x.shots)
 end
 
--- The target (looked for every AIM_EVERY s) and NM's pointArm on it, its point in NM's frame (m from where NM's origin is).
-local function aim(npc, x)
+-- NM's pointArm on the target, its point in NM's frame (m from where NM's origin is), sent again every 0.25 s.
+local function point_at(x, t, from)
 	local rag = x.rag
-	if not IsValid(x.weapon) or not rag.DMR_Agent or rag.DMR_Rising then return armStop(x) end
 	local now = CurTime()
-	local from = gunPose(x)
-	if now >= x.nextAim or not IsValid(x.target) then
-		x.nextAim = now + AIM_EVERY
-		x.target = pickTarget(x, npc, from)
-	end
-	local t = x.target
-	if not IsValid(t) or not hostile(npc, t) then
-		x.target = nil
-		return armStop(x)
-	end
-	if not point:GetBool() or now - x.lastHit < stun:GetFloat() then return armStop(x) end
 	if now < (x.nextPoint or 0) then return end
-	x.nextPoint = now + 0.1
+	x.nextPoint = now + 0.25
 	local st = DMR.FollowState(rag.DMR_Agent)
 	if not st then return end
 	local nm = t:BodyTarget(from) * M - Vector(st.origin.x, st.origin.y, st.origin.z)
@@ -181,9 +196,73 @@ local function aim(npc, x)
 	x.pointing = ok and true or false
 end
 
+local function mode(npc, x, m)
+	if x.mode == m then return end
+	x.mode = m
+	hook.Run("DMR_ArmedMode", npc, m)
+end
+
+-- Its attention: idle (nothing noticed), react (noticed something, the reaction time), aim (arm on it, may fire), rest
+-- (lost interest). It looks every AIM_EVERY s.
+local function aim(npc, x)
+	local rag = x.rag
+	if not IsValid(x.weapon) or not rag.DMR_Agent or rag.DMR_Rising then
+		mode(npc, x, "idle")
+		return armStop(x)
+	end
+	local now = CurTime()
+	local from = gunPose(x)
+	x.mode = x.mode or "idle"
+	if x.mode == "rest" then
+		armStop(x)
+		x.target = nil
+		if now >= x.untilT then mode(npc, x, "idle") end
+		return
+	end
+	if now >= (x.nextAim or 0) or not IsValid(x.target) then
+		x.nextAim = now + AIM_EVERY
+		local t = pickTarget(x, npc, from)
+		if x.mode == "idle" then
+			if t and math.random() < chance:GetFloat() then
+				x.target = t
+				x.untilT = now + math.Rand(0.6, 1.4)
+				mode(npc, x, "react")
+			elseif t then
+				-- It saw something and did not care: not again for a few seconds.
+				x.untilT = now + math.Rand(4, 8)
+				mode(npc, x, "rest")
+			end
+			return
+		end
+		x.target = t
+	end
+	local t = x.target
+	if not IsValid(t) or not hostile(npc, t) then
+		x.target = nil
+		mode(npc, x, "idle")
+		return armStop(x)
+	end
+	if x.mode == "react" then
+		if now >= x.untilT then
+			x.untilT = now + aimTime:GetFloat() * math.Rand(0.6, 1.4)
+			mode(npc, x, "aim")
+		end
+		return
+	end
+	-- aim
+	if now >= x.untilT then
+		x.untilT = now + math.Rand(4, 8)
+		x.target = nil
+		mode(npc, x, "rest")
+		return armStop(x)
+	end
+	if not point:GetBool() or now - x.lastHit < stun:GetFloat() then return armStop(x) end
+	point_at(x, t, from)
+end
+
 local function shoot(npc, x)
 	local rag = x.rag
-	if not IsValid(x.weapon) or not rag.DMR_Agent or rag.DMR_Rising then return end
+	if not IsValid(x.weapon) or not rag.DMR_Agent or rag.DMR_Rising or x.mode ~= "aim" then return end
 	local now = CurTime()
 	if now < x.nextShot or now - x.lastHit < stun:GetFloat() then return end
 	local t = x.target

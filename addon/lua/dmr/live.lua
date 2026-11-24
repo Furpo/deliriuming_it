@@ -70,6 +70,13 @@ local function show(ent, pos, yaw)
 	if IsValid(was.weapon) then was.weapon:SetNoDraw(false) end
 	if ent:IsNPC() then
 		if not was.notarget then ent:RemoveFlags(FL_NOTARGET) end
+		-- Its AI did not think while it lay there. It moves by the time since it last moved (`m_flTimeLastMovement`), so its
+		-- first think back carried it along its route by all of that at once, 100 units and more in one step ("teleports
+		-- away"). The time is reset (FLT_MAX, the NPC's own "has not moved": one ordinary step), and it starts a schedule
+		-- of its own instead of the route it was on.
+		ent:SetSaveValue("m_flTimeLastMovement", 3.4028234663853e+38)
+		ent:StopMoving()
+		ent:ClearSchedule()
 		ent:RemoveEFlags(EFL_NO_THINK_FUNCTION)
 		ent:NextThink(CurTime())
 	end

@@ -32,6 +32,19 @@ here and the shots are the game's.
    being hit lately (`dmr_inaccuracy`), and only while the gun points within `dmr_aim_cone` (30 degrees) of the
    target: it waits while the arm swings round.
 
+## Attention (added after play: "trying his hardest to track the player")
+
+The first version aimed at anything hostile within 2200 units, continuously. GTA IV's downed peds mostly do not shoot,
+unless the player is right in front of them, so the NPC now has attention (`aim` in `armed.lua`): it notices only
+something it is hostile to within `dmr_aim_range` (500 units) and within 70 degrees of where its head faces, or whoever hit
+it last within `dmr_range` (1500); it reacts after 0.6-1.4 s; it goes for what it noticed with the chance
+`dmr_aim_chance` (0.6), else ignores things for 4-8 s; it aims for about `dmr_aim_time` (4 s, 0.6x-1.4x), then rests 4-8
+s; `pointArm` is sent every 0.25 s and `dmr_arm_stiffness` is 14. **These numbers are guesses from that description, not
+GTA IV's**: its decision tables (`common\data\decision\*.ped`, `Combat\*.cmb`) are unlabelled numbers, and the
+ShotTask code that would say when a downed ped may fire was not read. Measured with a Combine in game: 2 shots and about
+5 s of aiming in 76 s of lying, against 61 shots in 60 s before; the distances in that check were not controlled (the NPC
+walked up to the player before it was shot).
+
 ## Consequences
 
 - Measured on a downed Combine with an SMG, 60 s each (`dmr_point 0`, then `1`): 15 shots inside the cone with the arm

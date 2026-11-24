@@ -80,3 +80,12 @@ hooks. On the bench (gm_flatgrass, 66 ticks, citizens and the player's model):
 - The duplicator and saves of a live ragdoll copy a ragdoll with NM, not the NPC behind it.
 - Golden `drunk` on Homer: no fall in either, the end height within 0.02 m and the commands' steps as the Playroom's;
   the COM within 0.10/0.05 m it isn't (1.86 / 1.21 m: the wander parts at step 4 by 1.5 mm and grows).
+
+## Later: giving the NPC back (2026-11-24)
+
+An NPC's AI does not think while it is its ragdoll (`EFL_NO_THINK_FUNCTION`), and it moves by the time since it last
+moved (`m_flTimeLastMovement`). Its first think back therefore carried it along whatever route it was on by all those
+seconds at once: it "teleported away" 100-130 units in one tick (seen in about a third of the hand-backs in a check where
+the NPC had been chasing the player). `show()` now resets `m_flTimeLastMovement` to FLT_MAX (the NPC's own "has not
+moved"), stops its movement and clears its schedule. Four hand-backs after the change showed no jump.
+
