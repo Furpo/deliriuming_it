@@ -35,6 +35,8 @@ fork under the model, driven by Delirium every physics step, the model posed fro
 
 ## Next
 
+- [x] Armed ragdolls (0038): a live NPC keeps its weapon, `pointArm` at its target, shoots while the gun points at it.
+      Open: a body lying on its arm aims badly; nothing lifts the torso (NM has no message for it, `splitBody` isn't one).
 - [ ] Get-up on fitted bodies (0037) beyond `get_up_fast`: the clips by health and what hurt the ped (injured, slow,
       normal), the transitions for lying on a side, the muscles' mode on the retargeted poses.
 - [ ] Both projects driving bodies at once: the fork keeps one step callback per environment, so the module that last

@@ -123,6 +123,14 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 | `dmr_live_max` | 4 | NPCs that are ragdolls at once (within `dmr_max_agents`); more take shots as the game does |
 | `dmr_live_time` | 30 | seconds at most an NPC stays a ragdoll; lying, it is given back once it has got up by the clip (0037) |
 
+| `dmr_armed` | 1 | a hostile live NPC keeps its weapon in the ragdoll's hand and shoots back (0038) |
+| `dmr_point` | 1 | NM's `pointArm` swings its gun arm toward the target |
+| `dmr_arm_stiffness` | 18 | `pointArm`'s `armStiffness` (NM's default 15) |
+| `dmr_aim_cone` | 30 | degrees: it fires only while the gun points this close to the target |
+| `dmr_stun` | 0.8 | seconds after a hit before it aims and fires again |
+| `dmr_range`, `dmr_inaccuracy` | 2200, 1 | how far it looks for a target (units); the scale of the extra spread (0: none) |
+| `dmr_gun_off_fwd/right/up/pitch/yaw/roll` (client) | 4, -1, 0, 0, 0, 180 | where the drawn gun sits in the hand's bone frame |
+
 `DMR_LiveBodies()` lists `{owner, rag, kind ("npc", "drunk"), since}`; hooks `DMR_LiveStarted(owner, rag)` and
 `DMR_LiveEnded(owner)`. `DMR.FollowRoom(id)` has `shot` and `blast`: the room's ShotTask and explosion task run. `DMR.FollowHold(id[, floor])` sets a fitted
 body's parts on the get-up clip (called each tick by the addon while the agent rises, with the floor's height under its

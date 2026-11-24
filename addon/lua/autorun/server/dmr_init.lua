@@ -2,6 +2,7 @@
 AddCSLuaFile("autorun/client/dmr_client.lua")
 AddCSLuaFile("dmr/cl_menu.lua")
 AddCSLuaFile("dmr/cl_ragdolls.lua")
+AddCSLuaFile("dmr/cl_armed.lua")
 AddCSLuaFile("dmr/cl_rig_view.lua")
 
 -- This addon's release: the module has to be the same one (scripts\package.ps1 checks both are Cargo.toml's).
@@ -76,6 +77,7 @@ include("dmr/rig_view.lua")
 include("dmr/ragdolls.lua")
 include("dmr/deaths.lua")
 include("dmr/live.lua")
+include("dmr/armed.lua")
 
 -- What keeps DMR from working here, a line each (empty: nothing): the fork, NM's data. For the console at start,
 -- superadmins as they join, and the DMR window's Debug tab.

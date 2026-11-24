@@ -3,4 +3,5 @@
 
 include("dmr/cl_menu.lua")
 include("dmr/cl_ragdolls.lua")
+include("dmr/cl_armed.lua")
 include("dmr/cl_rig_view.lua")
