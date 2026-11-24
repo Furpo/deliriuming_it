@@ -124,7 +124,6 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 | `dmr_live_time` | 30 | seconds at most an NPC stays a ragdoll; lying, it is given back once it has got up by the clip (0037) |
 | `dmr_zombies` | 0 | 1: zombies (class with "zombie") get NM ragdolls like other humanoids; 0 they keep the game's |
 | `dmr_live_shootable` | 1 | NPCs of the other team (Combine against rebels) shoot a downed live NPC until it is finished off (0038) |
-| `dmr_gun_body` | 1 | the gun is a body of NM's joined to the right hand (`DMR.GunAttach`): arm, hand and gun collide with the NPC's own spine, neck and head and with the world (0038) |
 | `dmr_two_hands` | 1 | a long gun (AR2, SMG, shotgun) is held in both hands: the left arm on the forend (client IK, 0038) |
 | `dmr_armed` | 1 | a hostile live NPC keeps its weapon in the ragdoll's hand and shoots back (0038) |
 | `dmr_point` | 1 | NM's `pointArm` swings its gun arm toward the target |

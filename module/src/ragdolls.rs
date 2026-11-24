@@ -16,7 +16,7 @@ use delirium::prelude::*;
 use delirium::ragdoll::{Build, Ragdoll};
 
 use crate::data;
-use crate::ffi::vphysics_nm::{self, IPhysicsObject, PhysicsNMBodyState, Version};
+use crate::ffi::vphysics_nm::{self, IPhysicsObject, Version};
 use dms_vphysics::body::{NativeBody, PartState};
 use crate::follow::BodyDef;
 use crate::lua::{self, Api, LuaState, TTABLE, native};
@@ -41,9 +41,6 @@ pub const NATIVES: &[(&CStr, lua::CFunction)] = &[
     (c"RagdollRemove", ragdoll_remove),
     (c"RagdollReport", ragdoll_report),
     (c"PoseModel", pose_model),
-    (c"GunAttach", gun_attach),
-    (c"GunRemove", gun_remove),
-    (c"GunState", gun_state),
 ];
 
 
@@ -81,8 +78,6 @@ pub fn unload() {
     *FITS.lock().unwrap_or_else(|e| e.into_inner()) = None;
     // The map's environment took the native bodies with it.
     *NATIVE.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *GUNS.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *NATIVE_DEFS.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 native!(model_skeleton => model_skeleton_impl);
@@ -694,11 +689,6 @@ native!(ragdoll_remove => ragdoll_remove_impl);
 /// `DMR.RagdollRemove(handle)`: the native body's joints and bodies gone (its agent taken off first, `DMR.Unfollow`).
 unsafe fn ragdoll_remove_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String> {
     let handle = unsafe { api.check_number(l, 1)? } as u32;
-    // A gun joined to its hand goes first.
-    if let Some(nm) = vphysics_nm::get() {
-        // SAFETY: made by `gun_attach`, not destroyed yet; the body is still alive.
-        unsafe { gun_destroy(&nm, handle, false) };
-    }
     let n = NATIVE.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|(_, m)| m.remove(&handle));
     if let (Some(n), Some(nm)) = (n, vphysics_nm::get()) {
         // SAFETY: made by `ragdoll_body`, not destroyed yet.
@@ -794,165 +784,4 @@ unsafe fn pose_model_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String> 
         }
     }
     Ok(1)
-}
-
-/// A gun made by [`gun_attach`]: its body and the joint to the hand.
-struct Gun {
-    object: *mut IPhysicsObject,
-    joint: *mut vphysics_nm::IPhysicsConstraint,
-}
-
-// SAFETY: only used on the thread that runs the physics.
-unsafe impl Send for Gun {}
-
-/// Native body handle -> its gun (one at most).
-static GUNS: Mutex<Option<HashMap<u32, Gun>>> = Mutex::new(None);
-
-/// Native body handle -> its definition, for putting its pairs back when its gun goes.
-static NATIVE_DEFS: Mutex<Option<HashMap<u32, Arc<BodyDef>>>> = Mutex::new(None);
-
-/// The part that holds the gun: `Hand_Right`.
-const HAND_RIGHT: usize = 20;
-/// The parts the gun collides with (the spine, the neck and the head): a hand and a gun are not let through the body.
-/// Not the pelvis and the legs (a gun at the hip starts overlapping them), not the arms (it is in the hand).
-const GUN_HITS: [usize; 6] = [7, 8, 9, 10, 11, 12];
-
-/// The gun of native body `handle` gone, its joint first; `restore`: the body's own collision pairs set again (not when
-/// the body goes too).
-///
-/// # Safety
-/// Outside the step callback, on the physics' thread; the native body (if any) alive.
-unsafe fn gun_destroy(nm: &vphysics_nm::Nm, handle: u32, restore: bool) {
-    let gun = GUNS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|m| m.remove(&handle));
-    let Some(gun) = gun else { return };
-    unsafe {
-        nm.destroy_joint(gun.joint);
-        nm.destroy_body(gun.object);
-    }
-    if restore {
-        let def = NATIVE_DEFS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&handle).cloned());
-        if let (Ok(n), Some(def)) = (native(handle), def) {
-            unsafe { nm.set_body_collision_pairs(&n.objects, &def.body.pairs) };
-        }
-    }
-}
-
-native!(gun_attach => gun_attach_impl);
-/// `DMR.GunAttach(model, handle, points, mass, grip)`: a gun as a body of NM's, joined to the right hand part
-/// (`VBOX3D_NM_006`), so the arm, the hand and the gun collide as one with the spine, the neck, the head and the world.
-/// `points`: a flat `{x, y, z, ...}` of the weapon's hull in its model's frame (units), whose origin is the hand bone's
-/// origin and whose axes are the hand bone's (a bonemerged weapon is drawn so); `mass` (kg); `grip`: where it is held
-/// (units, the model's frame). The joint is a ball with almost no play. Returns 1, or nothing if the body has a gun.
-unsafe fn gun_attach_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String> {
-    let f = fitted(&unsafe { api.check_string(l, 1)? })?;
-    let handle = unsafe { api.check_number(l, 2)? } as u32;
-    let n = native(handle)?;
-    let mass = (unsafe { api.check_number(l, 4)? } as f32).clamp(0.1, 6.0);
-    let grip = Vec3::from_array(unsafe { api.check_vec3(l, 5)? }) * M;
-    if GUNS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|m| m.contains_key(&handle)) {
-        return Ok(0);
-    }
-    // The hull's points (units, the model's frame) from the table.
-    let mut flat = vec![];
-    for i in 1.. {
-        unsafe { (api.rawgeti)(l, 3, i) };
-        let t = unsafe { (api.type_)(l, -1) };
-        let v = unsafe { (api.tonumber)(l, -1) } as f32;
-        unsafe { (api.settop)(l, -2) };
-        if t != lua::TNUMBER {
-            break;
-        }
-        flat.push(v);
-    }
-    let pts: Vec<Vec3> = flat.chunks_exact(3).map(|c| Vec3::new(c[0], c[1], c[2]) * M).collect();
-    if pts.len() < 4 || pts.iter().any(|p| !p.is_finite()) {
-        return Err("the gun's hull needs 4 points or more".into());
-    }
-    let nm = vphysics_nm::get().ok_or("IPhysicsNM isn't available")?;
-    if nm.version < Version::V006 {
-        return Err(format!("{} can't make a gun's body ({} needed)", nm.version.name(), Version::V006.name()));
-    }
-    let hand = *n.objects.get(HAND_RIGHT).ok_or("the body has no right hand")?;
-    // The hand bone's frame in the world: the part's turned by the bone's own (DMR.PoseModel's).
-    let posed = f.posed.iter().find(|p| p.part == HAND_RIGHT && p.own).or_else(|| f.posed.iter().find(|p| p.part == HAND_RIGHT)).ok_or("no bone poses the right hand")?;
-    // SAFETY: the native body's live object; main thread, outside the step.
-    let s = unsafe { nm.body_state(hand) }.ok_or("GetBodyState failed")?;
-    let (pp, pq) = (Vec3::from_array(s.position), Quat::from_array(s.rotation).normalize());
-    let bone_rot = (pq * posed.turn).normalize();
-    let bone_at = pp + pq * posed.at;
-    // The body's frame has its centre of mass on the origin: the hull's mean.
-    let com = pts.iter().fold(Vec3::ZERO, |a, p| a + *p) / pts.len() as f32;
-    let local: Vec<[f32; 3]> = pts.iter().map(|p| (*p - com).to_array()).collect();
-    let centre = bone_at + bone_rot * com;
-    // SAFETY: the hand's environment, a live object of it; outside the step (Lua's Think).
-    let env = unsafe { nm.object_environment(hand) };
-    let object = unsafe { nm.create_body(env, hand, &local, mass, &centre.to_array(), &bone_rot.to_array(), NO_SELF_COLLISIONS) }
-        .filter(|o| !o.is_null())
-        .ok_or("CreateBody refused the gun")?;
-    let joint = unsafe { nm.create_joint(hand, object, false) }.filter(|j| !j.is_null());
-    let Some(joint) = joint else {
-        unsafe { nm.destroy_body(object) };
-        return Err("CreateJoint refused the gun's joint".into());
-    };
-    let anchor = bone_at + bone_rot * grip;
-    let frames = [bone_rot.to_array(), bone_rot.to_array()];
-    let anchored = unsafe { nm.set_joint_anchor(joint, Some(&anchor.to_array())) };
-    let limited = unsafe { nm.set_joint_ball_limits(joint, hand, &frames, &[0.04, 0.04, 0.04]) } == Some(true);
-    if !anchored || !limited {
-        unsafe {
-            nm.destroy_joint(joint);
-            nm.destroy_body(object);
-        }
-        return Err(format!("the gun's joint: SetJointAnchor {anchored}, SetJointBallLimits {limited}"));
-    }
-    // Moving as the hand does where it is held; its own contact material.
-    let v = Vec3::from_array(s.velocity) + Vec3::from_array(s.angular_velocity).cross(centre - pp);
-    let state = PhysicsNMBodyState { position: centre.to_array(), rotation: bone_rot.to_array(), velocity: v.to_array(), angular_velocity: s.angular_velocity };
-    unsafe {
-        nm.set_body_state(object, &state);
-        nm.set_body_material(object, 0.8, 0.3);
-    }
-    let mut objects = n.objects.clone();
-    objects.push(object);
-    let mut pairs = f.def.body.pairs.clone();
-    pairs.extend(GUN_HITS.iter().map(|&k| (k, objects.len() - 1)));
-    if unsafe { nm.set_body_collision_pairs(&objects, &pairs) } != Some(true) {
-        unsafe {
-            nm.destroy_joint(joint);
-            nm.destroy_body(object);
-        }
-        return Err("SetBodyCollisionPairs refused the gun's pairs".into());
-    }
-    NATIVE_DEFS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(handle, f.def.clone());
-    GUNS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(handle, Gun { object, joint });
-    unsafe { (api.pushnumber)(l, 1.0) };
-    Ok(1)
-}
-
-native!(gun_remove => gun_remove_impl);
-/// `DMR.GunRemove(handle)`: the gun of native body `handle` gone (its joint, its body); the body's own pairs again.
-unsafe fn gun_remove_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String> {
-    let handle = unsafe { api.check_number(l, 1)? } as u32;
-    if let Some(nm) = vphysics_nm::get() {
-        // SAFETY: made by `gun_attach`; on the physics' thread, outside the step (Lua).
-        unsafe { gun_destroy(&nm, handle, true) };
-    }
-    Ok(0)
-}
-
-native!(gun_state => gun_state_impl);
-/// `DMR.GunState(handle)`: where the gun body of native body `handle` is, `x, y, z (units, its centre), pitch, yaw, roll`
-/// (degrees), or nothing without one.
-unsafe fn gun_state_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String> {
-    let handle = unsafe { api.check_number(l, 1)? } as u32;
-    let object = GUNS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&handle).map(|g| g.object));
-    let (Some(object), Some(nm)) = (object, vphysics_nm::get()) else { return Ok(0) };
-    // SAFETY: the gun's live body, on the physics' thread.
-    let s = unsafe { nm.body_state(object) }.ok_or("GetBodyState failed")?;
-    let [x, y, z] = (Vec3::from_array(s.position) / M).to_array();
-    let [p, w, r] = angles(Quat::from_array(s.rotation).normalize());
-    for v in [x, y, z, p, w, r] {
-        unsafe { (api.pushnumber)(l, f64::from(v)) };
-    }
-    Ok(6)
 }

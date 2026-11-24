@@ -29,8 +29,6 @@ local chance = CreateConVar("dmr_aim_chance", "0.15", FCVAR_ARCHIVE, "The chance
 local aimTime = CreateConVar("dmr_aim_time", "3", FCVAR_ARCHIVE, "Seconds (on average) a ragdolled NPC keeps aiming before it loses interest for a while")
 local sloppy = CreateConVar("dmr_inaccuracy", "1", FCVAR_ARCHIVE, "Scale of the extra spread from the body's motion and recent hits (0: none)")
 local twoHands = CreateConVar("dmr_two_hands", "1", FCVAR_ARCHIVE, "A long gun (rifle, shotgun) is held in both hands: the left hand goes to its forend (NM's pointArm)")
-local gunBody = CreateConVar("dmr_gun_body", "1", FCVAR_ARCHIVE,
-	"The gun is a body of NM's, joined to the hand: arm, hand and gun collide with the NPC's own spine and head and the world (needs the new module)")
 local stun = CreateConVar("dmr_stun", "0.8", FCVAR_ARCHIVE, "Seconds after being hit before a ragdolled NPC aims and fires again")
 
 -- How often the target is looked for (s).
@@ -91,58 +89,11 @@ local function handOff(x)
 	if IsValid(x.rag) then x.rag:SetNW2Bool("DMR_TwoHands", false) end
 end
 
--- The weapon's hull for its body: the physics mesh's vertices (a few dozen) in the model's frame, or its bounds' corners.
-local function hullOf(w)
-	local pts = {}
-	local po = w:GetPhysicsObject()
-	local mesh = IsValid(po) and po:GetMesh()
-	if mesh and #mesh >= 4 then
-		local step = math.max(1, math.floor(#mesh / 90))
-		for i = 1, #mesh, step do
-			local v = mesh[i].pos
-			pts[#pts + 1], pts[#pts + 2], pts[#pts + 3] = v.x, v.y, v.z
-		end
-	end
-	if #pts < 12 then
-		pts = {}
-		local mn, mx = w:GetModelBounds()
-		for _, x in ipairs({ mn.x, mx.x }) do
-			for _, y in ipairs({ mn.y, mx.y }) do
-				for _, z in ipairs({ mn.z, mx.z }) do
-					pts[#pts + 1], pts[#pts + 2], pts[#pts + 3] = x, y, z
-				end
-			end
-		end
-	end
-	return pts
-end
-
--- Its mass (kg) as a body of NM's: lighter than the real thing, so the arm is not pulled down by it.
-local GUN_MASS = { weapon_pistol = 0.6, weapon_357 = 0.9, weapon_smg1 = 1.2, weapon_ar2 = 1.5, weapon_shotgun = 1.6 }
-
--- The gun a body of NM's joined to the right hand (module: DMR.GunAttach), or its visual only when that is not possible.
-local function attachBody(x)
-	local rag = x.rag
-	if x.body or not gunBody:GetBool() or not DMR.GunAttach or not rag.DMR_Native or not rag.DMR_Fit or not x.grip then return end
-	local ok, err = pcall(DMR.GunAttach, rag.DMR_Fit, rag.DMR_Native, hullOf(x.weapon), GUN_MASS[x.weapon:GetClass()] or 1, x.grip)
-	if ok and err then
-		x.body = true
-	elseif not ok then
-		print("[DMR] no body for " .. x.weapon:GetClass() .. ": " .. tostring(err))
-	end
-end
-
-local function dropBody(x)
-	if x.body and IsValid(x.rag) and x.rag.DMR_Native and DMR.GunRemove then pcall(DMR.GunRemove, x.rag.DMR_Native) end
-	x.body = false
-end
-
 local function forget(npc)
 	local x = armedNpcs[npc]
 	if not x then return end
 	handOff(x)
 	armStop(x)
-	dropBody(x)
 	if IsValid(x.rag) then
 		x.rag:SetNW2String("DMR_GunModel", "")
 		x.rag:SetNW2Bool("DMR_GunHas", false)
@@ -178,7 +129,6 @@ hook.Add("DMR_LiveStarted", "DMR_Armed", function(npc, rag)
 		local muzzle = mz and (inv * mz.Pos) or (grip + Vector(14, 0, 0))
 		x.grip, x.barrel, x.muzzle = grip, (muzzle - grip):GetNormalized(), grip:Distance(muzzle)
 		x.fore = grip + (muzzle - grip) * 0.6
-		attachBody(x)
 	end
 	-- The clients draw the gun in the ragdoll's hand (cl_armed.lua): the real weapon is hidden with its owner.
 	rag:SetNW2String("DMR_GunModel", w:GetModel())
@@ -338,7 +288,6 @@ end
 -- flails). Here only the flag, while the body is not getting up.
 local function hold(x)
 	local rag = x.rag
-	if rag.DMR_Rising then dropBody(x) end
 	if not x.long or not x.fore or not x.loc then return end
 	local on = not rag.DMR_Rising and twoHands:GetBool() and rag.DMR_Agent ~= nil
 	if on ~= x.holding then
