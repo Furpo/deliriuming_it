@@ -275,7 +275,12 @@ local function V(t) return Vector(t.x, t.y, t.z) end
 local nextNet = 0
 hook.Add("Think", "DMR_Reactions", function()
 	for id, ent in pairs(DMR_Agents) do
-		if IsValid(ent) and ent.DMR_Rising then DMR.FollowHold(id) end
+		if IsValid(ent) and ent.DMR_Rising then
+			-- The floor under his pelvis: the clip's last frames are put on it (retarget.rs, `plant`).
+			local s = DMR.FollowState(id)
+			local floor = s and DMR_FloorBelow(Vector(s.pelvis.x, s.pelvis.y, s.pelvis.z) / 0.0254, ent)
+			DMR.FollowHold(id, floor and floor.z or nil)
+		end
 	end
 	if CurTime() < nextNet then return end
 	nextNet = CurTime() + 0.05

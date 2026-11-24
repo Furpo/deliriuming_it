@@ -121,10 +121,12 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 |---|---|---|
 | `dmr_live_npc` | 1 | shot NPCs become ragdolls with NM, then get up |
 | `dmr_live_max` | 4 | NPCs that are ragdolls at once (within `dmr_max_agents`); more take shots as the game does |
-| `dmr_live_time` | 15 | seconds at most an NPC stays a ragdoll |
+| `dmr_live_time` | 30 | seconds at most an NPC stays a ragdoll; lying, it is given back once it has got up by the clip (0037) |
 
 `DMR_LiveBodies()` lists `{owner, rag, kind ("npc", "drunk"), since}`; hooks `DMR_LiveStarted(owner, rag)` and
-`DMR_LiveEnded(owner)`. `DMR.FollowRoom(id)` has `shot` and `blast`: the room's ShotTask and explosion task run.
+`DMR_LiveEnded(owner)`. `DMR.FollowRoom(id)` has `shot` and `blast`: the room's ShotTask and explosion task run. `DMR.FollowHold(id[, floor])` sets a fitted
+body's parts on the get-up clip (called each tick by the addon while the agent rises, with the floor's height under its
+pelvis in game units; true if it held one).
 
 ## Reactions (`DMR.FollowReact(id, line)`, `dmr_react`)
 

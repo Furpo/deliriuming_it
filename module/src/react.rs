@@ -166,12 +166,15 @@ unsafe fn follow_pose_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String>
 }
 
 native!(follow_hold => follow_hold_impl);
-/// `DMR.FollowHold(id)`: while a fitted body gets up by animation, set its parts on the clip (what Lua does to Homer's
+/// `DMR.FollowHold(id[, floor])`: while a fitted body gets up by animation, set its parts on the clip (what Lua does to Homer's
 /// physics objects with `DMR.FollowPose`; a fitted body's objects are the module's). True if it held one.
 unsafe fn follow_hold_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String> {
     let id = unsafe { api.check_number(l, 1)? } as u32;
+    // The floor under the body's pelvis, in game units (optional): the clip's last frames are lowered onto it.
+    let floor = unsafe { api.opt_number(l, 2, f64::NAN)? };
+    let floor = (!floor.is_nan()).then_some(floor as f32 * METRES_PER_UNIT);
     let nm = crate::natives::nm()?;
-    let held = step::with(id, |f| f.hold_on_clip(&nm)).unwrap_or(false);
+    let held = step::with(id, |f| f.hold_on_clip(&nm, floor)).unwrap_or(false);
     unsafe { (api.pushboolean)(l, held.into()) };
     Ok(1)
 }

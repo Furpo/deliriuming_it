@@ -442,7 +442,7 @@ impl Follower {
     /// A fitted body held on the get-up clip (Lua calls `DMR.FollowHold` every tick while it rises, outside the
     /// physics step: Lua can't reach a fitted body's objects, as it holds Homer's): every part set to the clip's
     /// frame on this body, moving as the clip moves it. False if it isn't a fitted body on a clip.
-    pub fn hold_on_clip(&mut self, nm: &Nm) -> bool {
+    pub fn hold_on_clip(&mut self, nm: &Nm, floor: Option<f32>) -> bool {
         if self.lead || !self.def.fitted || self.objects.len() != PARTS {
             return false;
         }
@@ -450,7 +450,11 @@ impl Follower {
             self.hold_last = None;
             return false;
         };
-        let target = self.retarget().apply(&clip);
+        let mut target = self.retarget().apply(&clip);
+        // The floor under him (the game's frame, m), where Lua has it: the stand's feet on it (`Retarget::plant`).
+        if let Some(f) = floor {
+            self.retarget().plant(&mut target, f - self.origin.z);
+        }
         if target.len() != PARTS {
             return false;
         }

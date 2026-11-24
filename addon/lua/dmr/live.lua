@@ -23,6 +23,9 @@ local liveTime = CreateConVar("dmr_live_time", "30", FCVAR_ARCHIVE,
 -- A body settled: its centre of mass slower than SETTLED (m/s) for STAND_FOR s balancing, LIE_FOR s not, after at
 -- least MIN_FOR s as a ragdoll. How often it's looked at (s).
 local SETTLED, STAND_FOR, LIE_FOR, MIN_FOR = 0.3, 0.5, 1.5, 1
+-- With the get-up on, how long (s) a body lies still waiting for the room to get it up (it starts after 2 s lying with
+-- the head near the pelvis, 5 s curled up; a body propped up, sitting, never starts) before it's given back standing.
+local GETUP_WAIT = 7
 local STEP = 0.1
 
 -- GMod's ragdolls work with this fork (VBOX3D_NM_006).
@@ -316,7 +319,7 @@ hook.Add("Think", "DMR_Live", function()
 					end
 					-- Lying, the room gets it up (the clip, retargeted onto the body: module/src/follow/retarget.rs) and it is
 					-- given back standing once it balances; only with the get-up off does it stand up where it lay.
-					local need = s.balancing and STAND_FOR or (r.getup ~= "off" and math.huge or LIE_FOR)
+					local need = s.balancing and STAND_FOR or (r.getup ~= "off" and GETUP_WAIT or LIE_FOR)
 					if age >= MIN_FOR and l.still >= need then finish(ent) end
 				end
 			end

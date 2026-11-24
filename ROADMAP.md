@@ -35,6 +35,8 @@ fork under the model, driven by Delirium every physics step, the model posed fro
 
 ## Next
 
+- [ ] Get-up on fitted bodies (0037) beyond `get_up_fast`: the clips by health and what hurt the ped (injured, slow,
+      normal), the transitions for lying on a side, the muscles' mode on the retargeted poses.
 - [ ] Both projects driving bodies at once: the fork keeps one step callback per environment, so the module that last
       puts NM on a body takes it from the other. A fork change (several callbacks, a new `VBOX3D_NM_*`) in the golden
       repository, or one host for both.
@@ -137,7 +139,7 @@ moving as NM's body was, as a new ragdoll); the model's joints put in Homer's st
 reference pose stood the body with its arms 40° out and its neck forward); the 6 bones without objects finished on the
 client in `RenderOverride` (within 1.4 mm of NM's parts; `BuildBonePositions` never runs for a server ragdoll); the
 physgun and gravity gun grab NM's body (the Playroom's grab and poke), bullets hit their physics bone's part; get-up by
-animation off on fitted bodies (they stay down). The golden of a fitted body is its build in LEAD on the bench
+animation off on fitted bodies (they stayed down until 0037: Homer's clip retargeted onto them). The golden of a fitted body is its build in LEAD on the bench
 (`golden fit`): the Playroom can't load a fitted build. HL2's citizens, combine, police and alyx stand: 1.81 m / 81 kg,
 the women 1.72 m / 69 kg.
 
