@@ -64,7 +64,7 @@ impl std::ops::Deref for Fitted {
 /// Homer's build fitted to a model (`dms_fit::fit` on the loaded data's Homer).
 fn fit(d: &data::Data, s: &Skeleton, model: &str, names: Option<&[(String, String)]>, edits: Option<&rigs::Edits>) -> Result<Fitted, String> {
     let fit = dms_fit::fit::fit(&d.homer, &d.body, s, model, names, edits)?;
-    Ok(Fitted { def: Arc::new(BodyDef { build: fit.build.clone(), body: fit.body.clone(), fitted: true }), fit })
+    Ok(Fitted { def: Arc::new(BodyDef { build: fit.build.clone(), body: fit.body.clone(), fitted: true, retarget: Default::default() }), fit })
 }
 
 static FITS: Mutex<Option<HashMap<String, Arc<Fitted>>>> = Mutex::new(None);

@@ -17,7 +17,7 @@ local liveNpc = CreateConVar("dmr_live_npc", "1", { FCVAR_ARCHIVE, FCVAR_REPLICA
 	"A humanoid NPC shot (not killed) becomes its ragdoll with NM, the Playroom's reaction to the shot, then gets up where the body is")
 local liveMax = CreateConVar("dmr_live_max", "4", FCVAR_ARCHIVE,
 	"NPCs that are ragdolls with NM at once (within dmr_max_agents); more take their shots as the game does")
-local liveTime = CreateConVar("dmr_live_time", "15", FCVAR_ARCHIVE,
+local liveTime = CreateConVar("dmr_live_time", "30", FCVAR_ARCHIVE,
 	"Seconds at most an NPC stays its ragdoll before it's back on its feet")
 
 -- A body settled: its centre of mass slower than SETTLED (m/s) for STAND_FOR s balancing, LIE_FOR s not, after at
@@ -314,7 +314,10 @@ hook.Add("Think", "DMR_Live", function()
 					else
 						l.still = l.still + STEP
 					end
-					if age >= MIN_FOR and l.still >= (s.balancing and STAND_FOR or LIE_FOR) then finish(ent) end
+					-- Lying, the room gets it up (the clip, retargeted onto the body: module/src/follow/retarget.rs) and it is
+					-- given back standing once it balances; only with the get-up off does it stand up where it lay.
+					local need = s.balancing and STAND_FOR or (r.getup ~= "off" and math.huge or LIE_FOR)
+					if age >= MIN_FOR and l.still >= need then finish(ent) end
 				end
 			end
 		end

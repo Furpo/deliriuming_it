@@ -240,8 +240,9 @@ hook.Add("PhysgunDrop", "DMR_Reactions", thrown)
 hook.Add("GravGunOnDropped", "DMR_Reactions", thrown)
 hook.Add("GravGunPunt", "DMR_Reactions", thrown)
 
--- Getting up by animation is Homer's (his clips don't fit a fitted body, which stays down): nothing of a native body's
--- is Lua's to hold, so a clip only marks the agent while the module has it.
+-- Getting up by animation (Homer's clip, retargeted onto the fitted body by the module, module/src/follow/retarget.rs):
+-- nothing of a native body's is Lua's to hold, so a clip marks the agent while the module has it, and every tick
+-- DMR.FollowHold has the module set the body's parts on the clip (outside the physics step, as `SetBodyState` needs).
 local function freeze(ent)
 	ent.DMR_Rising = true
 end
@@ -273,6 +274,9 @@ local function V(t) return Vector(t.x, t.y, t.z) end
 -- The HUD and the window on the clients: NM's view of each body, 20 times a second.
 local nextNet = 0
 hook.Add("Think", "DMR_Reactions", function()
+	for id, ent in pairs(DMR_Agents) do
+		if IsValid(ent) and ent.DMR_Rising then DMR.FollowHold(id) end
+	end
 	if CurTime() < nextNet then return end
 	nextNet = CurTime() + 0.05
 	for id, ent in pairs(DMR_Agents) do

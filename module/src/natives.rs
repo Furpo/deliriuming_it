@@ -24,7 +24,7 @@ pub const NATIVES: &[(&CStr, lua::CFunction)] = &[
     (c"Shutdown", shutdown),
 ];
 
-fn nm() -> Result<Nm, String> {
+pub(crate) fn nm() -> Result<Nm, String> {
     vphysics_nm::get().ok_or_else(|| "IPhysicsNM isn't available (vphysics.dll isn't VPhysics-Box3D)".into())
 }
 

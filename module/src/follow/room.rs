@@ -1124,9 +1124,9 @@ impl Follower {
             self.room.last = pelvis;
             return;
         }
-        // A fitted body doesn't get up by Homer's clips: with the animation's mode it stays down (ROADMAP M10, the
-        // user's choice); the muscles' get-up takes the clip's poses as targets only, and runs.
-        let getup = if self.def.fitted && self.room.set.getup == 0 { 2 } else { self.room.set.getup };
+        // A fitted body gets up by Homer's clips too: the clip's frames are retargeted onto it (`retarget.rs`) and the
+        // module holds its parts on them (`hold_on_clip`, called by Lua each tick), NM taking it back at the clip's end.
+        let getup = self.room.set.getup;
         let down = getup != 2
             && !self.room.set.tasks
             && self.room.health >= 50.0
@@ -1153,7 +1153,7 @@ impl Follower {
                     self.say("ours  getting up with his muscles (the clip's poses as NMPose's; he can fail)");
                 }
                 _ => {
-                    self.room.rise = Some(clips.start(now));
+                    self.room.rise = Some(clips.start(self.clip_frames(now)));
                     self.freeze = true;
                     self.say("ours  getting up (the game's get_up_fast; the viewer's, not the game's task)");
                 }

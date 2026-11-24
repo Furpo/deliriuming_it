@@ -33,6 +33,7 @@ use crate::data::Data;
 use crate::ffi::vphysics_nm::{IPhysicsConstraint, IPhysicsObject, Nm, PhysicsNMBodyState};
 use crate::tuning;
 
+mod retarget;
 mod room;
 pub use room::{BUTTONS, EXTRA, GETUP_MODES, React, Settings, WEAPONS, apply_switch, set_settings, settings, weapon};
 
@@ -158,6 +159,8 @@ pub struct BodyDef {
     /// Fitted to a model (ROADMAP M10): Homer's get-up clips don't fit it, so it stays down instead (the user's
     /// choice).
     pub fitted: bool,
+    /// The get-up clip's frames on this body (`retarget.rs`), made when a fitted body first gets up.
+    pub retarget: std::sync::OnceLock<retarget::Retarget>,
 }
 
 pub struct Follower {
@@ -229,6 +232,8 @@ pub struct Follower {
     freeze: bool,
     unfreeze: bool,
     pub frozen: bool,
+    /// The last frames a fitted body was held on the clip at, and when (`hold_on_clip`).
+    hold_last: Option<(Vec<Transform>, std::time::Instant)>,
     respawn: Option<Vec<String>>,
     /// The room's lines since the last step, for Lua (`say` events).
     said: Vec<String>,
@@ -375,6 +380,7 @@ impl Follower {
             freeze: false,
             unfreeze: false,
             frozen: false,
+            hold_last: None,
             respawn: None,
             said: vec![],
             face: (ahead, axis),
@@ -420,6 +426,59 @@ impl Follower {
     /// Lua let the bodies go after a get-up by animation: NM takes them on its next step.
     pub fn rise_done(&mut self) {
         self.frozen = false;
+        self.hold_last = None;
+    }
+
+    /// The get-up clip's frames on this body (`retarget.rs`): Homer's own are the clip's.
+    fn retarget(&self) -> &retarget::Retarget {
+        self.def.retarget.get_or_init(|| retarget::Retarget::new(&self.data.body, &self.def.body))
+    }
+
+    /// The lying pose in the clip's (Homer's) proportions: a fitted body's through the retarget, Homer's as it is.
+    fn clip_frames(&self, lay: Vec<Transform>) -> Vec<Transform> {
+        if self.def.fitted { self.retarget().to_homer(&lay) } else { lay }
+    }
+
+    /// A fitted body held on the get-up clip (Lua calls `DMR.FollowHold` every tick while it rises, outside the
+    /// physics step: Lua can't reach a fitted body's objects, as it holds Homer's): every part set to the clip's
+    /// frame on this body, moving as the clip moves it. False if it isn't a fitted body on a clip.
+    pub fn hold_on_clip(&mut self, nm: &Nm) -> bool {
+        if self.lead || !self.def.fitted || self.objects.len() != PARTS {
+            return false;
+        }
+        let Some(clip) = self.rise_pose() else {
+            self.hold_last = None;
+            return false;
+        };
+        let target = self.retarget().apply(&clip);
+        if target.len() != PARTS {
+            return false;
+        }
+        let now = std::time::Instant::now();
+        let prev = self.hold_last.replace((target.clone(), now));
+        let dt = prev.as_ref().map(|(_, t)| now.duration_since(*t).as_secs_f32()).filter(|d| *d > 1e-4 && *d < 0.2);
+        for (k, (&o, t)) in self.objects.iter().zip(&target).enumerate() {
+            let (v, w) = match (&prev, dt) {
+                (Some((p, _)), Some(dt)) => {
+                    let mut dq = (t.rotation * p[k].rotation.inverse()).normalize();
+                    if dq.w < 0.0 {
+                        dq = -dq;
+                    }
+                    let (axis, angle) = dq.to_axis_angle();
+                    ((t.translation - p[k].translation) / dt, axis * (angle / dt))
+                }
+                _ => (Vec3::ZERO, Vec3::ZERO),
+            };
+            let s = PhysicsNMBodyState {
+                position: (t.translation + self.origin).to_array(),
+                rotation: t.rotation.to_array(),
+                velocity: v.to_array(),
+                angular_velocity: w.to_array(),
+            };
+            // SAFETY: live objects (`new`'s promise), called from a native, outside Simulate.
+            unsafe { nm.set_body_state(o, &s) };
+        }
+        true
     }
 
     /// The Playroom's `face` frame on the head (its part's frame): the head capsule's centre (m), the face's forward

@@ -16,6 +16,7 @@ use crate::tuning;
 pub const NATIVES: &[(&CStr, crate::lua::CFunction)] = &[
     (c"FollowReact", follow_react),
     (c"FollowPose", follow_pose),
+    (c"FollowHold", follow_hold),
     (c"FollowRiseDone", follow_rise_done),
     (c"FollowRiseCancel", follow_rise_cancel),
     (c"FollowRoom", follow_room),
@@ -161,6 +162,17 @@ unsafe fn follow_pose_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String>
             None => (api.pushnil)(l),
         }
     }
+    Ok(1)
+}
+
+native!(follow_hold => follow_hold_impl);
+/// `DMR.FollowHold(id)`: while a fitted body gets up by animation, set its parts on the clip (what Lua does to Homer's
+/// physics objects with `DMR.FollowPose`; a fitted body's objects are the module's). True if it held one.
+unsafe fn follow_hold_impl(api: &Api, l: *mut LuaState) -> Result<c_int, String> {
+    let id = unsafe { api.check_number(l, 1)? } as u32;
+    let nm = crate::natives::nm()?;
+    let held = step::with(id, |f| f.hold_on_clip(&nm)).unwrap_or(false);
+    unsafe { (api.pushboolean)(l, held.into()) };
     Ok(1)
 }
 
