@@ -72,3 +72,11 @@ none at all for the dead) while the angle to the player changed freely as the pl
 and fell again with flailing arms, also without aiming. Standing peds aimed at 18-25 degrees. So a downed ped in GTA IV
 does not shoot from the ground in this data; `dmr_aim_chance` 0.15 and `dmr_aim_range` 300 stay as a deliberately rare
 concession, not a measured behaviour.
+
+### Tuned after the third and fourth recordings (2026-11-24)
+
+The reaction time is now 2.5-5.5 s (it was 0.6-1.4 s): the cops measured in GTA IV began to bring the gun round 3-5 s after
+being hit (one while still stumbling, one after lying still), held it about 3 s and dropped it when the player walked
+off. `dmr_range` (whoever hit it last) falls from 1500 to 300 units, the same as `dmr_aim_range`, so a target that walks
+away is lost by the existing look (`pickTarget` every 0.4 s returns nothing, the NPC goes idle). Not implemented: the
+"only armed peds, only against a weak weapon" rule the player described for standing peds.

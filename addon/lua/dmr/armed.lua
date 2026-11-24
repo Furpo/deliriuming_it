@@ -24,7 +24,7 @@ local point = CreateConVar("dmr_point", "1", FCVAR_ARCHIVE,
 local armStiff = CreateConVar("dmr_arm_stiffness", "14", FCVAR_ARCHIVE, "pointArm's armStiffness (NM's default 15): how hard the arm holds the aim")
 local cone = CreateConVar("dmr_aim_cone", "30", FCVAR_ARCHIVE, "Degrees: a ragdolled NPC only fires while its gun points this close to its target")
 local aimRange = CreateConVar("dmr_aim_range", "300", FCVAR_ARCHIVE, "How close (units) something has to be, in front of the NPC's head, for a ragdolled NPC to notice it")
-local range = CreateConVar("dmr_range", "1500", FCVAR_ARCHIVE, "How far (units) away whoever hit a ragdolled NPC last still is something it shoots at")
+local range = CreateConVar("dmr_range", "300", FCVAR_ARCHIVE, "How far (units) away whoever hit a ragdolled NPC last still is something it shoots at")
 local chance = CreateConVar("dmr_aim_chance", "0.15", FCVAR_ARCHIVE, "The chance a ragdolled NPC that notices a target goes for it (0 to 1)")
 local aimTime = CreateConVar("dmr_aim_time", "3", FCVAR_ARCHIVE, "Seconds (on average) a ragdolled NPC keeps aiming before it loses interest for a while")
 local sloppy = CreateConVar("dmr_inaccuracy", "1", FCVAR_ARCHIVE, "Scale of the extra spread from the body's motion and recent hits (0: none)")
@@ -225,7 +225,7 @@ local function aim(npc, x)
 		if x.mode == "idle" then
 			if t and math.random() < chance:GetFloat() then
 				x.target = t
-				x.untilT = now + math.Rand(0.6, 1.4)
+				x.untilT = now + math.Rand(2.5, 5.5)
 				mode(npc, x, "react")
 			elseif t then
 				-- It saw something and did not care: not again for a few seconds.

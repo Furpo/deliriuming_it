@@ -128,7 +128,7 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 | `dmr_aim_cone` | 30 | degrees: it fires only while the gun points this close to the target |
 | `dmr_stun` | 0.8 | seconds after a hit before it aims and fires again |
 | `dmr_aim_range` | 300 | units: how close something in front of its head has to be for it to notice (0038) |
-| `dmr_range` | 1500 | units: how far away whoever hit it last still is a target |
+| `dmr_range` | 300 | units: how far away whoever hit it last still is a target |
 | `dmr_aim_chance`, `dmr_aim_time` | 0.15, 3 | the chance it goes for what it noticed; seconds it aims before it loses interest for a while |
 | `dmr_inaccuracy` | 1 | the scale of the extra spread from the body's speed and recent hits (0: none) |
 | `dmr_gun_off_fwd/right/up/pitch/yaw/roll` (client) | 4, -1, 0, 0, 0, 180 | where the drawn gun sits in the hand's bone frame |
