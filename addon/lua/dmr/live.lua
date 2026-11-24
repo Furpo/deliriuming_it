@@ -20,6 +20,9 @@ local liveMax = CreateConVar("dmr_live_max", "4", FCVAR_ARCHIVE,
 local liveTime = CreateConVar("dmr_live_time", "30", FCVAR_ARCHIVE,
 	"Seconds at most an NPC stays its ragdoll before it's back on its feet")
 
+local shootable = CreateConVar("dmr_live_shootable", "1", FCVAR_ARCHIVE,
+	"Other NPCs that are hostile to a ragdolled NPC (Combine against rebels and back) shoot it until it is finished off")
+
 -- A body settled: its centre of mass slower than SETTLED (m/s) for STAND_FOR s balancing, LIE_FOR s not, after at
 -- least MIN_FOR s as a ragdoll. How often it's looked at (s).
 local SETTLED, STAND_FOR, LIE_FOR, MIN_FOR = 0.3, 0.5, 1.5, 1
@@ -46,16 +49,42 @@ local function count(kind)
 	return n
 end
 
--- The owner out of the way while its ragdoll stands in for it.
+-- The team of an NPC for who shoots whom while one lies as its ragdoll: the tag is `rag.DMR_Team`.
+local TEAMS = {
+	combine = { npc_combine_s = true, npc_metropolice = true, npc_manhack = true, npc_cscanner = true, npc_clawscanner = true,
+		npc_hunter = true, npc_stalker = true, npc_rollermine = true, npc_helicopter = true, npc_combinegunship = true,
+		npc_combinedropship = true, npc_strider = true, npc_turret_floor = true, npc_turret_ceiling = true },
+	rebel = { npc_citizen = true, npc_alyx = true, npc_barney = true, npc_eli = true, npc_kleiner = true, npc_mossman = true,
+		npc_monk = true, npc_magnusson = true, npc_vortigaunt = true, npc_dog = true, npc_breen = false },
+}
+function DMR_TeamOf(ent)
+	if not IsValid(ent) or not ent:IsNPC() then return nil end
+	local c = ent:GetClass()
+	for name, set in pairs(TEAMS) do
+		if set[c] then return name end
+	end
+end
+
+-- The owner out of the way while its ragdoll stands in for it. An NPC is not drawn (alpha 0, not the no-draw flag: the
+-- others' eyes skip what is not drawn) and not solid, but it stays a target (shootable): the others shoot at it where its
+-- ragdoll is, and hit the ragdoll.
 local function hide(ent)
 	local w = ent.GetActiveWeapon and ent:GetActiveWeapon()
-	ent.DMR_LiveWas = { move = ent:GetMoveType(), weapon = IsValid(w) and w or nil, notarget = ent:IsFlagSet(FL_NOTARGET) }
-	ent:SetNoDraw(true)
+	ent.DMR_LiveWas = { move = ent:GetMoveType(), weapon = IsValid(w) and w or nil, notarget = ent:IsFlagSet(FL_NOTARGET),
+		color = ent:GetColor(), mode = ent:GetRenderMode() }
+	local c = ent:GetColor()
+	if ent:IsNPC() then
+		ent:SetRenderMode(RENDERMODE_TRANSCOLOR)
+		ent:SetColor(Color(c.r, c.g, c.b, 0))
+		ent:DrawShadow(false)
+	else
+		ent:SetNoDraw(true)
+	end
 	ent:SetNotSolid(true)
 	ent:SetMoveType(MOVETYPE_NONE)
 	if IsValid(w) then w:SetNoDraw(true) end
 	if ent:IsNPC() then
-		ent:AddFlags(FL_NOTARGET)
+		if not shootable:GetBool() then ent:AddFlags(FL_NOTARGET) end
 		ent:AddEFlags(EFL_NO_THINK_FUNCTION)
 	end
 end
@@ -65,11 +94,17 @@ local function show(ent, pos, yaw)
 	local was = ent.DMR_LiveWas or {}
 	ent.DMR_LiveWas = nil
 	ent:SetNoDraw(false)
+	if was.color then
+		ent:SetColor(was.color)
+		ent:SetRenderMode(was.mode)
+		ent:DrawShadow(true)
+	end
 	ent:SetNotSolid(false)
 	if was.move then ent:SetMoveType(was.move) end
 	if IsValid(was.weapon) then was.weapon:SetNoDraw(false) end
 	if ent:IsNPC() then
 		if not was.notarget then ent:RemoveFlags(FL_NOTARGET) end
+		DMR_ForgetShooters(ent)
 		-- Its AI did not think while it lay there. It moves by the time since it last moved (`m_flTimeLastMovement`), so its
 		-- first think back carried it along its route by all of that at once, 100 units and more in one step ("teleports
 		-- away"). The time is reset (FLT_MAX, the NPC's own "has not moved": one ordinary step), and it starts a schedule
@@ -136,6 +171,7 @@ local function begin(ent, kind)
 		return nil, why
 	end
 	rag.DMR_LiveOf, ent.DMR_Live = ent, rag
+	rag.DMR_Team = DMR_TeamOf(ent)
 	lives[ent] = { rag = rag, kind = kind, since = CurTime(), still = 0 }
 	hide(ent)
 	if ent:IsPlayer() then ent:SetNW2Entity("DMR_Live", rag) end
@@ -169,6 +205,8 @@ local function died(owner)
 		undo.ReplaceEntity(owner, rag)
 		cleanup.ReplaceEntity(owner, rag)
 	end
+	DMR_ForgetShooters(owner)
+	hook.Run("DMR_LiveDied", owner, rag)
 	local ok, why = DMR_DiedAsRagdoll(rag, owner)
 	if ok then return end
 	if why ~= "death ragdolls are off" then print("[DMR] NM isn't on " .. tostring(owner) .. "'s death ragdoll: " .. tostring(why)) end
@@ -296,6 +334,46 @@ hook.Add("StartCommand", "DMR_Live", function(ply, cmd)
 end)
 hook.Add("PlayerSwitchWeapon", "DMR_Live", function(ply) if lives[ply] then return true end end)
 
+-- Others that were made to see an NPC lying as its ragdoll as an enemy: {owner = {npc = its disposition before}}.
+local shooters = {}
+function DMR_ForgetShooters(owner)
+	local set = shooters[owner]
+	shooters[owner] = nil
+	if not set then return end
+	for npc, was in pairs(set) do
+		if IsValid(npc) and IsValid(owner) and was ~= true then npc:AddEntityRelationship(owner, was, 99) end
+	end
+end
+
+-- An NPC lying as its ragdoll is a target for the opposite team (Combine against rebels, and back) until it is finished
+-- off: they are made hostile to it if they were not and aimed at it when they see the body.
+local function shootAt(owner, rag)
+	local team = rag.DMR_Team
+	if not team then return end
+	local pelvis = pelvisOf(rag)
+	local set = shooters[owner] or {}
+	shooters[owner] = set
+	for _, npc in ipairs(ents.FindInSphere(pelvis, 1800)) do
+		if npc ~= owner and npc:IsNPC() and npc:Health() > 0 and not npc.DMR_Live and DMR_TeamOf(npc) and DMR_TeamOf(npc) ~= team then
+			local d = npc:Disposition(owner)
+			if d ~= D_HT then
+				set[npc] = d
+				npc:AddEntityRelationship(owner, D_HT, 99)
+			elseif set[npc] == nil then
+				set[npc] = true
+			end
+			local e = npc:GetEnemy()
+			if not IsValid(e) or e == owner or (e:GetPos():DistToSqr(npc:GetPos()) > pelvis:DistToSqr(npc:GetPos()) * 1.5 and not e:IsPlayer()) then
+				local tr = util.TraceLine({ start = npc:EyePos(), endpos = pelvis, mask = MASK_SHOT, filter = { npc, owner, rag } })
+				if tr.Fraction > 0.97 then
+					npc:SetEnemy(owner)
+					npc:UpdateEnemyMemory(owner, pelvis)
+				end
+			end
+		end
+	end
+end
+
 -- Ten times a second: the owner kept with its body (where it'll stand; the server sends what's near it), an NPC back
 -- once its body has settled.
 local nextLook = 0
@@ -311,7 +389,16 @@ hook.Add("Think", "DMR_Live", function()
 			finish(ent)
 		else
 			local pelvis = pelvisOf(rag)
-			ent:SetPos(DMR_FloorBelow(pelvis) or pelvis)
+			if ent:IsNPC() and shootable:GetBool() then
+				-- Where the others aim: its centre on the body.
+				ent:SetPos(pelvis - ent:OBBCenter())
+				if CurTime() >= (l.nextShoot or 0) then
+					l.nextShoot = CurTime() + 0.5
+					shootAt(ent, rag)
+				end
+			else
+				ent:SetPos(DMR_FloorBelow(pelvis) or pelvis)
+			end
 			if l.kind == "npc" then
 				local s, r = DMR.FollowState(rag.DMR_Agent), DMR.FollowRoom(rag.DMR_Agent)
 				local age = CurTime() - l.since

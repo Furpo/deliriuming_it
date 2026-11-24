@@ -33,8 +33,14 @@ function DMR_IsMapped(ent)
 end
 
 -- An entity of any class (an NPC, a player) whose model is such a humanoid with a ragdoll.
+local zombies = CreateConVar("dmr_zombies", "0", { FCVAR_ARCHIVE, FCVAR_REPLICATED },
+	"Zombies (NPCs whose class has \"zombie\" in it) get NM ragdolls as other humanoids do; off: they keep the game's")
+
 function DMR_HasMapped(ent)
-	return IsValid(ent) and util.IsValidRagdoll(ent:GetModel()) and DMR_ModelMapped(ent:GetModel())
+	if not IsValid(ent) then return false end
+	-- Zombies keep the game's ragdolls: no NM on them, alive (live.lua) or dead (deaths.lua).
+	if ent:IsNPC() and not zombies:GetBool() and string.find(ent:GetClass(), "zombie", 1, true) then return false end
+	return util.IsValidRagdoll(ent:GetModel()) and DMR_ModelMapped(ent:GetModel())
 end
 
 -- M10–M11.5's names: any mapped humanoid now.

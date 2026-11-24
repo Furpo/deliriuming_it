@@ -80,3 +80,24 @@ being hit (one while still stumbling, one after lying still), held it about 3 s 
 off. `dmr_range` (whoever hit it last) falls from 1500 to 300 units, the same as `dmr_aim_range`, so a target that walks
 away is lost by the existing look (`pickTarget` every 0.4 s returns nothing, the NPC goes idle). Not implemented: the
 "only armed peds, only against a weak weapon" rule the player described for standing peds.
+
+### Later (2026-11-25): shooting the downed, dropping guns, both hands, the gun where it was held
+
+- **Zombies** keep the game's ragdolls (`dmr_zombies` 0): `DMR_HasMapped` is false for an NPC whose class has "zombie".
+- **A downed NPC is shot at.** The owner is no longer `FL_NOTARGET` (`dmr_live_shootable`): it is drawn with alpha 0, not the
+  no-draw flag, and kept with its centre on the body's pelvis, so the others aim at the body and hit the ragdoll (its hits
+  are the owner's, live.lua). NPCs have a team (`DMR_TeamOf`: Combine, rebel; the ragdoll's `DMR_Team`); every 0.5 s those of
+  the other team within 1800 units are made hostile to it if they were not (and given back what they were when it is
+  over) and take it as their enemy when they see it and have none nearer. Checked: a rebel took a downed Combine as its
+  enemy and took it from 45 to 27 hp.
+- **A killed ragdolled NPC drops its gun.** The weapon had stayed hidden with its owner and the clients kept drawing the gun
+  in the corpse's hand. `DMR_LiveDied` now has the weapon shown, dropped at the hand and moving as it, and the drawn gun
+  cleared.
+- **The gun is where the NPC held it.** The weapon's origin is the NPC's `anim_attachment_RH`: its place in the right hand
+  bone's frame is taken when the NPC goes down and the clients use it (`DMR_GunPos`/`Ang`), not offsets that fit one model.
+  The muzzle for the shots is the weapon's own.
+- **Long guns in both hands** (`dmr_two_hands`). `pointArm` on the left arm toward the forend did not work (the arm did not
+  move, or flailed when the right arm carried the gun too): the physical arm is NM's and the left hand is put on the forend
+  as the body is drawn, a two-bone solve on the bones (`DMR_TwoHandIK`, cl_armed.lua, called by cl_ragdolls.lua's render).
+  The forend is 60 per cent from the grip to the muzzle. Seen in frames of shot Combine with an AR2: the gun across the
+  body with both arms on it. Not measured in numbers; the physical hand is where NM has it.

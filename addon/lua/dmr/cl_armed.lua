@@ -34,6 +34,16 @@ local function place(ent, cs)
 	local b = ent:LookupBone("ValveBiped.Bip01_R_Hand")
 	local m = b and ent:GetBoneMatrix(b)
 	if not m then return false end
+	-- Where the NPC held this weapon, in its hand bone's frame (armed.lua took it from the NPC's anim_attachment_RH).
+	if ent:GetNW2Bool("DMR_GunHas", false) then
+		local loc = Matrix()
+		loc:SetTranslation(ent:GetNW2Vector("DMR_GunPos", vector_origin))
+		loc:SetAngles(ent:GetNW2Angle("DMR_GunAng", angle_zero))
+		local g = m * loc
+		cs:SetPos(g:GetTranslation())
+		cs:SetAngles(g:GetAngles())
+		return true
+	end
 	local pos, ang = m:GetTranslation(), m:GetAngles()
 	pos = pos + ang:Forward() * cv.fwd:GetFloat() + ang:Right() * cv.right:GetFloat() + ang:Up() * cv.up:GetFloat()
 	ang:RotateAroundAxis(ang:Right(), cv.pitch:GetFloat())
@@ -42,6 +52,79 @@ local function place(ent, cs)
 	cs:SetPos(pos)
 	cs:SetAngles(ang)
 	return true
+end
+
+-- The left arm on the gun's forend (armed.lua flags DMR_TwoHands and sends the forend in the right hand's frame,
+-- DMR_GunFore). Two-bone IK on the drawn bones: the upper arm and the forearm turned so the hand reaches the forend, the
+-- elbow where it bends now, the fingers carried with the hand. Called by cl_ragdolls.lua's render after the bones are set.
+local function rotAbout(axis, ang, pivot)
+	local c, s = math.cos(ang), math.sin(ang)
+	local x, y, z, t = axis.x, axis.y, axis.z, 1 - c
+	local r = Matrix({
+		{ t * x * x + c, t * x * y - s * z, t * x * z + s * y, 0 },
+		{ t * x * y + s * z, t * y * y + c, t * y * z - s * x, 0 },
+		{ t * x * z - s * y, t * y * z + s * x, t * z * z + c, 0 },
+		{ 0, 0, 0, 1 },
+	})
+	-- Turning about the pivot: the pivot stays where it is.
+	local p = pivot - r * pivot
+	r:SetTranslation(p)
+	return r
+end
+
+-- The rotation taking the direction a to the direction b (unit vectors), about `pivot`.
+local function turn(a, b, pivot)
+	local axis = a:Cross(b)
+	local len = axis:Length()
+	if len < 1e-5 then return Matrix() end
+	return rotAbout(axis / len, math.atan2(len, a:Dot(b)), pivot)
+end
+
+function DMR_TwoHandIK(ent)
+	if not ent:GetNW2Bool("DMR_TwoHands", false) then return end
+	local rh = ent:LookupBone("ValveBiped.Bip01_R_Hand")
+	local ua, fa, lh = ent:LookupBone("ValveBiped.Bip01_L_UpperArm"), ent:LookupBone("ValveBiped.Bip01_L_Forearm"), ent:LookupBone("ValveBiped.Bip01_L_Hand")
+	if not (rh and ua and fa and lh) then return end
+	local rm, um, fm, hm = ent:GetBoneMatrix(rh), ent:GetBoneMatrix(ua), ent:GetBoneMatrix(fa), ent:GetBoneMatrix(lh)
+	if not (rm and um and fm and hm) then return end
+	local target = rm * ent:GetNW2Vector("DMR_GunFore", vector_origin)
+	local S, E0, H0 = um:GetTranslation(), fm:GetTranslation(), hm:GetTranslation()
+	local a, b = S:Distance(E0), E0:Distance(H0)
+	if a < 1 or b < 1 then return end
+	local to = target - S
+	local d = to:Length()
+	if d < 1 then return end
+	-- Out of reach (a hand cannot go further than its arm): the arm toward it as far as it goes, and the hand not on it.
+	local dd = math.Clamp(d, math.abs(a - b) + 0.5, a + b - 0.5)
+	local u = to / d
+	local x = (a * a - b * b + dd * dd) / (2 * dd)
+	local h = math.sqrt(math.max(a * a - x * x, 0))
+	-- The elbow bends where it bends now: its side of the line from the shoulder to the hand.
+	local p0 = (E0 - S) - u * (E0 - S):Dot(u)
+	if p0:Length() < 0.5 then p0 = -ent:GetUp() end
+	local pole = p0:GetNormalized()
+	local E = S + u * x + pole * h
+	local H = S + u * dd
+	-- Upper arm: its direction to the new elbow; the forearm goes with it, then turns about the elbow to reach the hand.
+	local r1 = turn((E0 - S):GetNormalized(), (E - S):GetNormalized(), S)
+	local H1 = r1 * H0
+	local r2 = turn((H1 - E):GetNormalized(), (H - E):GetNormalized(), E)
+	local R = r2 * r1
+	-- The hand turns with the forearm; the fingers with the hand (what has no object of its own).
+	local new = R * hm
+	ent:SetBoneMatrix(ua, r1 * um)
+	ent:SetBoneMatrix(fa, R * fm)
+	ent:SetBoneMatrix(lh, new)
+	local delta = new * hm:GetInverseTR()
+	local under = { [lh] = true }
+	for i = 0, ent:GetBoneCount() - 1 do
+		local p = ent:GetBoneParent(i)
+		if p and under[p] then
+			under[i] = true
+			local old = ent:GetBoneMatrix(i)
+			if old then ent:SetBoneMatrix(i, delta * old) end
+		end
+	end
 end
 
 hook.Add("PostDrawOpaqueRenderables", "DMR_Armed", function()

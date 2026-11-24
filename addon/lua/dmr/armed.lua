@@ -28,6 +28,7 @@ local range = CreateConVar("dmr_range", "300", FCVAR_ARCHIVE, "How far (units) a
 local chance = CreateConVar("dmr_aim_chance", "0.15", FCVAR_ARCHIVE, "The chance a ragdolled NPC that notices a target goes for it (0 to 1)")
 local aimTime = CreateConVar("dmr_aim_time", "3", FCVAR_ARCHIVE, "Seconds (on average) a ragdolled NPC keeps aiming before it loses interest for a while")
 local sloppy = CreateConVar("dmr_inaccuracy", "1", FCVAR_ARCHIVE, "Scale of the extra spread from the body's motion and recent hits (0: none)")
+local twoHands = CreateConVar("dmr_two_hands", "1", FCVAR_ARCHIVE, "A long gun (rifle, shotgun) is held in both hands: the left hand goes to its forend (NM's pointArm)")
 local stun = CreateConVar("dmr_stun", "0.8", FCVAR_ARCHIVE, "Seconds after being hit before a ragdolled NPC aims and fires again")
 
 -- How often the target is looked for (s).
@@ -47,6 +48,15 @@ local NO_FIRE = {
 	weapon_crowbar = true, weapon_stunstick = true, weapon_rpg = true, weapon_frag = true, weapon_slam = true,
 	weapon_crossbow = true, weapon_physcannon = true, weapon_physgun = true,
 }
+
+-- Long guns are held in both hands (the left on the forend, NM's pointArm), as a GTA IV ped holds a rifle.
+local LONG_CLASS = { weapon_ar2 = true, weapon_smg1 = true, weapon_shotgun = true, weapon_crossbow = true, weapon_rpg = true }
+local LONG_HOLD = { ar2 = true, smg = true, shotgun = true, crossbow = true, rpg = true, physgun = true }
+local function isLong(w)
+	if LONG_CLASS[w:GetClass()] then return true end
+	local ok, h = pcall(w.GetHoldType, w)
+	return ok and LONG_HOLD[h] or false
+end
 
 local function profile(w)
 	local class = w:GetClass()
@@ -73,11 +83,21 @@ local function armStop(x)
 	x.pointing = false
 end
 
+-- The left hand off the gun too (the NPC lets go of it: dead, getting up).
+local function handOff(x)
+	x.holding = false
+	if IsValid(x.rag) then x.rag:SetNW2Bool("DMR_TwoHands", false) end
+end
+
 local function forget(npc)
 	local x = armedNpcs[npc]
 	if not x then return end
+	handOff(x)
 	armStop(x)
-	if IsValid(x.rag) then x.rag:SetNW2String("DMR_GunModel", "") end
+	if IsValid(x.rag) then
+		x.rag:SetNW2String("DMR_GunModel", "")
+		x.rag:SetNW2Bool("DMR_GunHas", false)
+	end
 	armedNpcs[npc] = nil
 end
 
@@ -87,13 +107,77 @@ hook.Add("DMR_LiveStarted", "DMR_Armed", function(npc, rag)
 	if not armed:GetBool() or not IsValid(w) then return end
 	local prof = profile(w)
 	if not prof then return end
-	armedNpcs[npc] = { rag = rag, weapon = w, prof = prof, nextShot = CurTime() + 1, left = 0, lastHit = CurTime(), nextAim = 0 }
+	local x = { rag = rag, weapon = w, prof = prof, nextShot = CurTime() + 1, left = 0, lastHit = CurTime(), nextAim = 0, long = isLong(w) }
+	armedNpcs[npc] = x
+	-- Where this NPC's hand holds this weapon: the weapon's origin is the NPC's anim_attachment_RH, so that, kept in the
+	-- hand bone's frame, puts any weapon in the ragdoll's hand as it was in the NPC's (the clients use it, cl_armed.lua);
+	-- the left hand's place on the gun, sixty per cent along from the grip to the muzzle, in the same frame.
+	local hb = npc:LookupBone("ValveBiped.Bip01_R_Hand")
+	local hm = hb and npc:GetBoneMatrix(hb)
+	local ai = npc:LookupAttachment("anim_attachment_RH")
+	local att = ai > 0 and npc:GetAttachment(ai)
+	if hm and att then
+		local inv = hm:GetInverse()
+		local am = Matrix()
+		am:SetTranslation(att.Pos)
+		am:SetAngles(att.Ang)
+		x.loc = inv * am
+		rag:SetNW2Bool("DMR_GunHas", true)
+		rag:SetNW2Vector("DMR_GunPos", x.loc:GetTranslation())
+		rag:SetNW2Angle("DMR_GunAng", x.loc:GetAngles())
+		local mi = w:LookupAttachment("muzzle")
+		local mz = mi > 0 and w:GetAttachment(mi)
+		if mz then
+			x.fore = inv * (att.Pos + (mz.Pos - att.Pos) * 0.6)
+			x.muzzle = (inv * mz.Pos):Distance(x.loc:GetTranslation())
+		end
+	end
 	-- The clients draw the gun in the ragdoll's hand (cl_armed.lua): the real weapon is hidden with its owner.
 	rag:SetNW2String("DMR_GunModel", w:GetModel())
 	rag:SetNW2Int("DMR_GunSkin", w:GetSkin())
 end)
 
 hook.Add("DMR_LiveEnded", "DMR_Armed", forget)
+
+-- Killed as its ragdoll: the gun leaves its hand (the NPC's own weapon shown again, dropped where the hand is, moving
+-- as the hand does), whatever it was, armed here or not.
+hook.Add("DMR_LiveDied", "DMR_Armed", function(npc, rag)
+	local x = armedNpcs[npc]
+	local w = x and x.weapon or (npc.DMR_LiveWas and npc.DMR_LiveWas.weapon)
+	local loc = x and x.loc
+	forget(npc)
+	if IsValid(rag) then
+		rag:SetNW2String("DMR_GunModel", "")
+		rag:SetNW2Bool("DMR_GunHas", false)
+	end
+	if not IsValid(w) then return end
+	local pos, ang, vel = w:GetPos(), w:GetAngles(), vector_origin
+	local b = IsValid(rag) and rag:LookupBone("ValveBiped.Bip01_R_Hand")
+	local m = b and rag:GetBoneMatrix(b)
+	if m then
+		pos, ang = m:GetTranslation(), m:GetAngles()
+		if loc then
+			local g = m * loc
+			pos, ang = g:GetTranslation(), g:GetAngles()
+		end
+		local po = rag:GetPhysicsObjectNum(rag:TranslateBoneToPhysBone(b))
+		if IsValid(po) then vel = po:GetVelocity() end
+	end
+	w:SetNoDraw(false)
+	if IsValid(w:GetOwner()) then pcall(npc.DropWeapon, npc, w) end
+	timer.Simple(0, function()
+		if not IsValid(w) then return end
+		w:SetNoDraw(false)
+		w:SetOwner(NULL)
+		w:SetPos(pos)
+		w:SetAngles(ang)
+		local ph = w:GetPhysicsObject()
+		if IsValid(ph) then
+			ph:Wake()
+			ph:SetVelocity(vel)
+		end
+	end)
+end)
 
 -- A hit on the ragdoll is a hit on its owner: its aim is off for a moment.
 hook.Add("EntityTakeDamage", "DMR_Armed", function(ent, dmg)
@@ -156,6 +240,10 @@ local function gunPose(x)
 	local rag = x.rag
 	local b = rag:LookupBone("ValveBiped.Bip01_R_Hand")
 	local m = b and rag:GetBoneMatrix(b)
+	if m and x.loc then
+		local g = m * x.loc
+		return g:GetTranslation(), g:GetForward()
+	end
 	if m then return m:GetTranslation(), m:GetForward() end
 	return rag:WorldSpaceCenter(), rag:GetForward()
 end
@@ -169,7 +257,7 @@ local function fire(x, npc, from, gdir, toTarget)
 	local p = x.prof
 	-- Along the gun, pulled halfway to the target.
 	local dir = (gdir + toTarget):GetNormalized()
-	from = from + gdir * 14
+	from = from + gdir * (x.muzzle or 14)
 	-- Wider the faster the body moves and the more recently it was hit.
 	local extra = (0.015 * speedOf(x.rag) + (CurTime() - x.lastHit < 1.5 and 0.05 or 0)) * sloppy:GetFloat()
 	local s = p.spread + extra
@@ -194,6 +282,20 @@ local function point_at(x, t, from)
 	local ok = DMR_Send(rag, string.format("pointArm start=true useLeftArm=false target=%.4f,%.4f,%.4f armStiffness=%g armStraightness=0.9",
 		nm.x, nm.y, nm.z, armStiff:GetFloat()))
 	x.pointing = ok and true or false
+end
+
+-- A long gun is held in both hands: the clients put the left arm on the gun's forend as the body is drawn (cl_armed.lua,
+-- two-bone IK on the bones; the physical arm is NM's, an arm driven by pointArm to a point the gun's own arm moves
+-- flails). Here only the flag, while the body is not getting up.
+local function hold(x)
+	local rag = x.rag
+	if not x.long or not x.fore or not x.loc then return end
+	local on = not rag.DMR_Rising and twoHands:GetBool() and rag.DMR_Agent ~= nil
+	if on ~= x.holding then
+		x.holding = on
+		rag:SetNW2Bool("DMR_TwoHands", on)
+		if on then rag:SetNW2Vector("DMR_GunFore", x.fore) end
+	end
 end
 
 local function mode(npc, x, m)
@@ -295,6 +397,7 @@ hook.Add("Think", "DMR_Armed", function()
 		if not IsValid(npc) or not IsValid(x.rag) or not armed:GetBool() then
 			forget(npc)
 		else
+			hold(x)
 			aim(npc, x)
 			shoot(npc, x)
 		end

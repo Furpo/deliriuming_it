@@ -61,6 +61,7 @@ end
 local function render(ent, flags)
 	ent:SetupBones()
 	finish(ent, ent:GetBoneCount())
+	if DMR_TwoHandIK then DMR_TwoHandIK(ent) end
 	if ent.DMR_OldRender then return ent.DMR_OldRender(ent, flags) end
 	ent:DrawModel(flags)
 end
