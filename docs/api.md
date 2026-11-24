@@ -122,7 +122,6 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 | `dmr_live_npc` | 1 | shot NPCs become ragdolls with NM, then get up |
 | `dmr_live_max` | 4 | NPCs that are ragdolls at once (within `dmr_max_agents`); more take shots as the game does |
 | `dmr_live_time` | 30 | seconds at most an NPC stays a ragdoll; lying, it is given back once it has got up by the clip (0037) |
-
 | `dmr_armed` | 1 | a hostile live NPC keeps its weapon in the ragdoll's hand and shoots back (0038) |
 | `dmr_point` | 1 | NM's `pointArm` swings its gun arm toward the target |
 | `dmr_arm_stiffness` | 18 | `pointArm`'s `armStiffness` (NM's default 15) |
