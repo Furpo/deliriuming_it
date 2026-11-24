@@ -93,11 +93,16 @@ away is lost by the existing look (`pickTarget` every 0.4 s returns nothing, the
 - **A killed ragdolled NPC drops its gun.** The weapon had stayed hidden with its owner and the clients kept drawing the gun
   in the corpse's hand. `DMR_LiveDied` now has the weapon shown, dropped at the hand and moving as it, and the drawn gun
   cleared.
-- **The gun is where the NPC held it.** The weapon's origin is the NPC's `anim_attachment_RH`: its place in the right hand
-  bone's frame is taken when the NPC goes down and the clients use it (`DMR_GunPos`/`Ang`), not offsets that fit one model.
-  The muzzle for the shots is the weapon's own.
+- **The gun is where the NPC held it.** The weapon is bonemerged to the NPC: its own `ValveBiped.Bip01_R_Hand` bone is the
+  NPC's hand bone (measured: local offset 0 for every HL2 weapon and NPC) and its model hangs from `ValveBiped.Weapon_bone`
+  (5 forward, 1.5 right, 5 down of the hand). So the clients draw the model at the right hand bone with no offset. (The first
+  version used the NPC's `anim_attachment_RH`, 2.7 forward and 1.7 right with a roll of 180: the gun sat beside the palm and
+  the hand at the wrong end of it.) The barrel's direction, the muzzle and the forend come from the weapon's own bones.
+- **Fingers** close round the grip on the clients (`dmr_grip_deg`, `dmr_grip_axis`: a ragdoll's fingers have no objects and
+  stay open): each finger bone turned about its pitch axis, 30/50/35 degrees per segment, the thumb less.
 - **Long guns in both hands** (`dmr_two_hands`). `pointArm` on the left arm toward the forend did not work (the arm did not
   move, or flailed when the right arm carried the gun too): the physical arm is NM's and the left hand is put on the forend
-  as the body is drawn, a two-bone solve on the bones (`DMR_TwoHandIK`, cl_armed.lua, called by cl_ragdolls.lua's render).
+  as the body is drawn, only where the forend is within the arm's reach of the shoulder (a gun hanging at the right hip is not
+  reached through the chest), a two-bone solve on the bones (`DMR_TwoHandIK`, cl_armed.lua, called by cl_ragdolls.lua's render).
   The forend is 60 per cent from the grip to the muzzle. Seen in frames of shot Combine with an AR2: the gun across the
   body with both arms on it. Not measured in numbers; the physical hand is where NM has it.

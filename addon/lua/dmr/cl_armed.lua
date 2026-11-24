@@ -80,8 +80,46 @@ local function turn(a, b, pivot)
 	return rotAbout(axis / len, math.atan2(len, a:Dot(b)), pivot)
 end
 
+-- Fingers closed round the grip (a ragdoll's hand is open: its fingers have no objects and keep the model's relaxed
+-- pose). Each finger bone is turned about its own joint, parent first so the segments add up, the bones under it with it.
+local gripAxis = CreateClientConVar("dmr_grip_axis", "0", true, false, "Which of a finger bone's own axes it curls about (0 pitch, 1 yaw, 2 roll)")
+local gripDeg = CreateClientConVar("dmr_grip_deg", "1", true, false, "Scale of the fingers' curl round a gun (0: open hands)")
+local CURL = { { 0, 30 }, { 1, 50 }, { 2, 35 } } -- {segment suffix index, degrees}
+local FINGERS = {
+	{ "Finger1", "Finger11", "Finger12", 1 }, { "Finger2", "Finger21", "Finger22", 1 },
+	{ "Finger3", "Finger31", "Finger32", 1 }, { "Finger4", "Finger41", "Finger42", 1 },
+	{ "Finger0", "Finger01", "Finger02", 0.4 },
+}
+local function curl(ent, side)
+	local k = gripDeg:GetFloat()
+	if k <= 0 then return end
+	local ax = gripAxis:GetInt()
+	for _, f in ipairs(FINGERS) do
+		local parentNew, parentOld
+		for seg = 1, 3 do
+			local bone = ent:LookupBone("ValveBiped.Bip01_" .. side .. "_" .. f[seg])
+			local m = bone and ent:GetBoneMatrix(bone)
+			if not m then break end
+			local p = ent:GetBoneParent(bone)
+			local pm = parentNew or (p and p >= 0 and ent:GetBoneMatrix(p))
+			local po = parentOld or pm
+			if pm and po then
+				local deg = CURL[seg][2] * k * f[4]
+				local ang = Angle(ax == 0 and deg or 0, ax == 1 and deg or 0, ax == 2 and deg or 0)
+				local r = Matrix()
+				r:SetAngles(ang)
+				local nm = pm * (po:GetInverseTR() * m) * r
+				ent:SetBoneMatrix(bone, nm)
+				parentNew, parentOld = nm, m
+			end
+		end
+	end
+end
+
 function DMR_TwoHandIK(ent)
-	if not ent:GetNW2Bool("DMR_TwoHands", false) then return end
+	local two = ent:GetNW2Bool("DMR_TwoHands", false)
+	if ent:GetNW2Bool("DMR_GunHas", false) then curl(ent, "R") end
+	if not two then return end
 	local rh = ent:LookupBone("ValveBiped.Bip01_R_Hand")
 	local ua, fa, lh = ent:LookupBone("ValveBiped.Bip01_L_UpperArm"), ent:LookupBone("ValveBiped.Bip01_L_Forearm"), ent:LookupBone("ValveBiped.Bip01_L_Hand")
 	if not (rh and ua and fa and lh) then return end
@@ -91,10 +129,16 @@ function DMR_TwoHandIK(ent)
 	local S, E0, H0 = um:GetTranslation(), fm:GetTranslation(), hm:GetTranslation()
 	local a, b = S:Distance(E0), E0:Distance(H0)
 	if a < 1 or b < 1 then return end
+	-- Only where the hand can reach it without crossing the body: the grip eases in as the forend comes within 85 per cent
+	-- of the arm's length of the shoulder and is gone beyond 100 (a gun hanging at the right hip is not reached by a hand
+	-- through the chest). Between, the hand's target moves from where it is to the forend.
+	local reach = a + b
+	local w = math.Clamp((reach - S:Distance(target)) / (0.15 * reach), 0, 1)
+	if w <= 0 then return end
+	target = H0 + (target - H0) * w
 	local to = target - S
 	local d = to:Length()
 	if d < 1 then return end
-	-- Out of reach (a hand cannot go further than its arm): the arm toward it as far as it goes, and the hand not on it.
 	local dd = math.Clamp(d, math.abs(a - b) + 0.5, a + b - 0.5)
 	local u = to / d
 	local x = (a * a - b * b + dd * dd) / (2 * dd)
@@ -125,6 +169,7 @@ function DMR_TwoHandIK(ent)
 			if old then ent:SetBoneMatrix(i, delta * old) end
 		end
 	end
+	curl(ent, "L")
 end
 
 hook.Add("PostDrawOpaqueRenderables", "DMR_Armed", function()

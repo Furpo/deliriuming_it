@@ -109,28 +109,26 @@ hook.Add("DMR_LiveStarted", "DMR_Armed", function(npc, rag)
 	if not prof then return end
 	local x = { rag = rag, weapon = w, prof = prof, nextShot = CurTime() + 1, left = 0, lastHit = CurTime(), nextAim = 0, long = isLong(w) }
 	armedNpcs[npc] = x
-	-- Where this NPC's hand holds this weapon: the weapon's origin is the NPC's anim_attachment_RH, so that, kept in the
-	-- hand bone's frame, puts any weapon in the ragdoll's hand as it was in the NPC's (the clients use it, cl_armed.lua);
-	-- the left hand's place on the gun, sixty per cent along from the grip to the muzzle, in the same frame.
+	-- Where the weapon is: it is bonemerged to the NPC, its own "ValveBiped.Bip01_R_Hand" bone is the hand's and its
+	-- model hangs from "ValveBiped.Weapon_bone" (5 forward, 1.5 right, 5 down of the hand: measured, the same for every
+	-- HL2 weapon and NPC). So the model drawn at the hand bone with no offset is the weapon as the NPC held it. The grip
+	-- (that bone), the muzzle and the left hand's place on the forend (60 per cent of the way) are kept in the hand's frame.
 	local hb = npc:LookupBone("ValveBiped.Bip01_R_Hand")
 	local hm = hb and npc:GetBoneMatrix(hb)
-	local ai = npc:LookupAttachment("anim_attachment_RH")
-	local att = ai > 0 and npc:GetAttachment(ai)
-	if hm and att then
+	if hm then
 		local inv = hm:GetInverse()
-		local am = Matrix()
-		am:SetTranslation(att.Pos)
-		am:SetAngles(att.Ang)
-		x.loc = inv * am
+		x.loc = Matrix()
 		rag:SetNW2Bool("DMR_GunHas", true)
-		rag:SetNW2Vector("DMR_GunPos", x.loc:GetTranslation())
-		rag:SetNW2Angle("DMR_GunAng", x.loc:GetAngles())
+		rag:SetNW2Vector("DMR_GunPos", vector_origin)
+		rag:SetNW2Angle("DMR_GunAng", angle_zero)
+		local gb = w:LookupBone("ValveBiped.Weapon_bone")
+		local gm = gb and w:GetBoneMatrix(gb)
+		local grip = gm and (inv * gm:GetTranslation()) or Vector(5, -1.5, -5)
 		local mi = w:LookupAttachment("muzzle")
 		local mz = mi > 0 and w:GetAttachment(mi)
-		if mz then
-			x.fore = inv * (att.Pos + (mz.Pos - att.Pos) * 0.6)
-			x.muzzle = (inv * mz.Pos):Distance(x.loc:GetTranslation())
-		end
+		local muzzle = mz and (inv * mz.Pos) or (grip + Vector(14, 0, 0))
+		x.grip, x.barrel, x.muzzle = grip, (muzzle - grip):GetNormalized(), grip:Distance(muzzle)
+		x.fore = grip + (muzzle - grip) * 0.6
 	end
 	-- The clients draw the gun in the ragdoll's hand (cl_armed.lua): the real weapon is hidden with its owner.
 	rag:SetNW2String("DMR_GunModel", w:GetModel())
@@ -240,9 +238,10 @@ local function gunPose(x)
 	local rag = x.rag
 	local b = rag:LookupBone("ValveBiped.Bip01_R_Hand")
 	local m = b and rag:GetBoneMatrix(b)
-	if m and x.loc then
-		local g = m * x.loc
-		return g:GetTranslation(), g:GetForward()
+	if m and x.grip then
+		-- The grip, and the barrel's direction (the hand's frame turned into the world's).
+		local d = m:GetAngles():Forward() * x.barrel.x + m:GetAngles():Right() * -x.barrel.y + m:GetAngles():Up() * x.barrel.z
+		return m * x.grip, d:GetNormalized()
 	end
 	if m then return m:GetTranslation(), m:GetForward() end
 	return rag:WorldSpaceCenter(), rag:GetForward()
