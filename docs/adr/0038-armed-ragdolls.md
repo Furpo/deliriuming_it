@@ -63,3 +63,12 @@ downed peds do not track the player, and the defaults now make aiming from the g
 - A body lying on its arm, or face down, aims less well; nothing lifts the torso (NM has no message for it here).
 - Hits on the ragdoll still reach the NPC as live.lua has them, so a hostile ragdoll can be shot back.
 - A `DMR_ArmedFire(npc, pointing)` hook runs before each shot (the checks use it).
+
+## GTA IV measurement, second recording (2026-11-24)
+
+A 240 s recording (63 skeletons) while the player wounded and then killed peds from a roof. Peds that were lying (head
+level with the pelvis) never held their gun arm on the player: the arm direction stayed fixed (drift under 20 degrees, or
+none at all for the dead) while the angle to the player changed freely as the player moved. Wounded peds got up, propped
+and fell again with flailing arms, also without aiming. Standing peds aimed at 18-25 degrees. So a downed ped in GTA IV
+does not shoot from the ground in this data; `dmr_aim_chance` 0.15 and `dmr_aim_range` 300 stay as a deliberately rare
+concession, not a measured behaviour.
