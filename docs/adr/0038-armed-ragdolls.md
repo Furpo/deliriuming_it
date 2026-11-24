@@ -106,3 +106,12 @@ away is lost by the existing look (`pickTarget` every 0.4 s returns nothing, the
   reached through the chest), a two-bone solve on the bones (`DMR_TwoHandIK`, cl_armed.lua, called by cl_ragdolls.lua's render).
   The forend is 60 per cent from the grip to the muzzle. Seen in frames of shot Combine with an AR2: the gun across the
   body with both arms on it. Not measured in numbers; the physical hand is where NM has it.
+
+### Tried and dropped: the gun as a body of NM's (2026-11-25)
+
+A gun body made by the fork and joined to the right hand part (so hand and gun would collide with the spine and the
+head) was built and worked in a few runs (commit 336d4bb, reverted in 288c621). It was dropped as a bad direction:
+NM's body is meant to be the character, and a prop in it changes how the arm moves and ties the gun to the module's
+internals. The gun stays what it was: drawn on the clients at the right hand bone (the weapon's own bonemerge frame),
+the left hand on the forend by client IK, the fingers closed on the grip. Hand and gun can therefore go through the
+body; that is accepted.
