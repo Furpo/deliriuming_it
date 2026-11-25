@@ -87,3 +87,8 @@ does (other kills as above):
   chooses stagger or relax when a hit lands, so health alone does not change what the body does.)
 
 Not tried in game when written (the player asked for no tests): the timings are first guesses.
+
+Later (2026-11-26): `dmr_death_time` is 60 s (the player's choice: a minute of real time, NM throughout), so a dying body
+keeps NM for it whatever `dmr_autoattach_time` (30 s) says (that counts from its death) and `dmr_autoattach_max` is 8 (a
+dying body is one of them for the minute; the ninth would take NM off the oldest). `dmr_death_down` (default 0, off): the
+earlier "dies once it has lain down 1.5 s".

@@ -18,7 +18,7 @@ local npcs = CreateConVar("dmr_autoattach_npc", "1", { FCVAR_ARCHIVE, FCVAR_REPL
 	"NM on the death ragdolls of NPCs with humanoid models (made on the server for it), reacting to the killing hit")
 local players = CreateConVar("dmr_autoattach_players", "1", { FCVAR_ARCHIVE, FCVAR_REPLICATED },
 	"NM on players' death ragdolls: a server ragdoll of the player's model in place of GMod's client one, the death camera on it")
-local maxDeaths = CreateConVar("dmr_autoattach_max", "4", FCVAR_ARCHIVE,
+local maxDeaths = CreateConVar("dmr_autoattach_max", "8", FCVAR_ARCHIVE,
 	"Death ragdolls with NM at once (within dmr_max_agents): a new one takes NM off the oldest")
 local keepFor = CreateConVar("dmr_autoattach_time", "30", FCVAR_ARCHIVE,
 	"Seconds a death ragdoll keeps NM before it's an ordinary ragdoll (0: till dmr_autoattach_max takes it)")
@@ -26,8 +26,10 @@ local keepFor = CreateConVar("dmr_autoattach_time", "30", FCVAR_ARCHIVE,
 local stagger = CreateConVar("dmr_death_stagger", "1", FCVAR_ARCHIVE,
 	"A bullet that kills: the body staggers as a shot one does (reaching for the wound) for a moment and then dies; a headshot flails and falls without holding a wound (0: the dying reaction, limp)")
 
-local dyingTime = CreateConVar("dmr_death_time", "6", FCVAR_ARCHIVE,
-	"Seconds (about) a body shot that kills takes to die: it staggers holding the wound, weakens, and dies at the end (dmr_death_stagger)")
+local dyingTime = CreateConVar("dmr_death_time", "60", FCVAR_ARCHIVE,
+	"Seconds (about, real time) a body shot that kills takes to die: it staggers holding the wound, stays NM's, and dies at the end (dmr_death_stagger)")
+local dyingDown = CreateConVar("dmr_death_down", "0", FCVAR_ARCHIVE,
+	"Seconds a dying body has to lie down before it dies, whatever time is left (0: it dies at the end of dmr_death_time only)")
 
 -- How recent the last hit has to be to be the killing one (s).
 local HIT_AGE = 0.5
@@ -105,26 +107,29 @@ local FATALLY_INJURED = 49
 -- The body's dying: one hit (the shot's stagger, reaching for the wound: the room's ShotTask) and then no more hits (each
 -- restarted the whole shot reaction, arms waving like a seizure). The room's health only falls in steps (`health value=`,
 -- no hit), the body staying NM's, and it dies (`health value=0`, the room's death: limp) at the end of about
--- dmr_death_time s, or sooner once it lies down and has lain there 1.5 s.
+-- dmr_death_time s (or sooner once it has lain down dmr_death_down s, if that is set). The lines to come and the total.
 local function dyingLines()
-	local total = math.max(1.5, dyingTime:GetFloat()) * math.Rand(0.85, 1.15)
-	local n = math.max(2, math.floor(total / 0.5))
+	local total = math.max(1.5, dyingTime:GetFloat()) * math.Rand(0.9, 1.1)
+	local step = math.max(0.5, total / 30)
+	local n = math.max(2, math.floor(total / step))
 	local later = {}
 	for i = 1, n - 1 do
 		later[#later + 1] = { i * total / n, "health value=" .. math.max(1, math.floor(200 * (1 - i / n))) }
 	end
-	-- Down and still: its death.
-	local lying = 0
-	for t = 2.0, total, 0.5 do
-		later[#later + 1] = { t, function(rag)
-			local hb, pb = rag:LookupBone("ValveBiped.Bip01_Head1"), rag:LookupBone("ValveBiped.Bip01_Pelvis")
-			local hm, pm = hb and rag:GetBoneMatrix(hb), pb and rag:GetBoneMatrix(pb)
-			if hm and pm and hm:GetTranslation().z - pm:GetTranslation().z < 18 then lying = lying + 0.5 else lying = 0 end
-			if lying >= 1.5 then DMR_React(rag, "health value=0") end
-		end }
+	local down = dyingDown:GetFloat()
+	if down > 0 then
+		local lying = 0
+		for t = 2.0, total, 1.0 do
+			later[#later + 1] = { t, function(rag)
+				local hb, pb = rag:LookupBone("ValveBiped.Bip01_Head1"), rag:LookupBone("ValveBiped.Bip01_Pelvis")
+				local hm, pm = hb and rag:GetBoneMatrix(hb), pb and rag:GetBoneMatrix(pb)
+				if hm and pm and hm:GetTranslation().z - pm:GetTranslation().z < 18 then lying = lying + 1.0 else lying = 0 end
+				if lying >= down then DMR_React(rag, "health value=0") end
+			end }
+		end
 	end
 	later[#later + 1] = { total, "health value=0" }
-	return later
+	return later, total
 end
 
 local function deathLines(rag, h)
@@ -140,7 +145,8 @@ local function deathLines(rag, h)
 		hit = string.format("shot at=%s dir=%s weapon=%s%s", at(h.pos), dir(h.dir), h.weapon, part and (" part=" .. part) or "")
 		-- Any other bullet: the stagger of a shot that does not kill (reaching for the wound, standing), and then its death.
 		if stagger:GetBool() then
-			return { "health value=200", hit }, dyingLines()
+			local later, total = dyingLines()
+			return { "health value=200", hit }, later, total
 		end
 	elseif h.kind == "blast" then
 		hit = "blast at=" .. at(h.centre)
@@ -198,13 +204,14 @@ end
 
 -- NM on a death ragdoll (kept on one that has it, live.lua's) and the room's lines to it (by default the killing hit
 -- `h`'s). The agent's id, or nil and why.
-local function attach(rag, h, owner, lines, later)
+local function attach(rag, h, owner, lines, later, hold)
 	if not makeRoom(rag.DMR_Agent ~= nil) then return nil, "no room (dmr_autoattach_max, dmr_max_agents)" end
 	local id, why = DMR_AttachRagdoll(rag)
 	if not id then return nil, why end
 	rag.DMR_Death = true
-	corpses[#corpses + 1] = { ent = rag, owner = owner, since = CurTime() }
-	if not lines then lines, later = deathLines(rag, h) end
+	-- A dying body keeps NM at least till its death (dmr_autoattach_time counts from then).
+	corpses[#corpses + 1] = { ent = rag, owner = owner, since = CurTime() + (hold or 0) }
+	if not lines then lines, later, hold = deathLines(rag, h) end
 	for _, line in ipairs(lines) do DMR_React(rag, line) end
 	-- What comes later (the end of a stagger: its death), if the body still has NM then.
 	for _, l in ipairs(later or {}) do
