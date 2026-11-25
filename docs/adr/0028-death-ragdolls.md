@@ -106,3 +106,7 @@ lethal: `health value=0` at once, and none of its later lines (the health steps,
 the crawl continued). (2) The lean was `applyAsForce=true leanAmount=0.25`, a continuous shove that forced the stumble and
 fall: it is now `applyAsForce=false` at `dmr_death_lean` (0.12), on for two ticks and off for one (the balancer steps under a
 lean it can follow), the wobble +-15 degrees.
+
+(2026-11-26, later) The crawl kept changing its style (stomach, left side, right side): `injuredOnGround` rolls the body
+between face down, face up and its sides to reach the wound, against `learnedCrawl`'s stomach crawl. Down, a body now gets
+`learnedCrawl` alone, started once and aimed again only when the way away has turned 35 degrees (or every 10 s), not every 2 s.

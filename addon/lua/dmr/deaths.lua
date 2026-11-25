@@ -140,7 +140,6 @@ local function walkAway(h)
 			if st.crawling then
 				st.crawling = false
 				send(rag, "learnedCrawl start=false")
-				send(rag, "injuredOnGround start=false")
 			end
 			if not st.injured then
 				st.injured = true
@@ -156,14 +155,16 @@ local function walkAway(h)
 				send(rag, string.format("leanInDirection start=true applyAsForce=false dir=%.3f,%.3f,0 leanAmount=%.3f", d.x, d.y, dyingLean:GetFloat()))
 			end
 		else
-			-- Down: the crawl, toward a point away (re-aimed every 2 s).
+			-- Down: the crawl alone (injuredOnGround rolls the body between face down, face up and its sides to reach the
+			-- wound, which fought the crawl: it kept changing its style). Started once toward a point away, and aimed
+			-- again only when the way away has turned 35 degrees or more (or every 10 s), not every few seconds.
 			if not st.crawling then
 				st.crawling = true
 				send(rag, "leanInDirection start=false")
-				send(rag, "injuredOnGround start=true numInjuries=1")
 			end
-			if CurTime() - st.lastCrawl > 2 then
-				st.lastCrawl = CurTime()
+			local turned = not st.heading or st.heading:Dot(away) < 0.82
+			if turned or CurTime() - st.lastCrawl > 10 then
+				st.lastCrawl, st.heading = CurTime(), away
 				local target = (pel + away * 150) * M - Vector(fs.origin.x, fs.origin.y, fs.origin.z)
 				send(rag, string.format("learnedCrawl start=true speed=0.6 targetPosition=%.3f,%.3f,%.3f", target.x, target.y, target.z))
 			end
