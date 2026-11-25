@@ -68,3 +68,17 @@ that:
   on, NM's body took the ragdoll's 44.6 m/s: the motion is handed over; with it off, 0.03 m/s and the room's impulse.
 - `golden body --fit` on male_07, female_01 and combine_soldier: the build within 1e-6 of the SDK's, the native body's
   frames within 2.2 µm and 7e-7 rad, masses and tensors exact, a drop without NM within NM's limits.
+
+## Later: how it dies depends on the bullet (2026-11-26)
+
+With `dmr_live_npc` off (0029), an NM ragdoll only comes with a death, and the dying reaction (a fatally injured body
+reaching for the wound, then limp) read as "dead-dead". `dmr_death_stagger` (default 1) changes what a killing **bullet**
+does (other kills as above):
+
+- **A headshot** (the hit in the model's head hitbox, `DMR_IsHeadshot`, padded 3 units): no `shot` (no reaching for a
+  wound): the game's own push on the body stays (the room's impulse is not used), the room is at 49 (no getting up), arms
+  windmill and the body stays up 0.8 s, `STOP all`, then `health value=0`: it falls limp.
+- **Any other bullet:** the stagger a shot that does not kill gets (the room at health 200, the `shot` reaction: standing,
+  reaching for the wound) for 1.1 to 1.8 s, then `health value=0`: the death.
+
+Not tried in game when written (the player asked for no tests): the timings are first guesses.

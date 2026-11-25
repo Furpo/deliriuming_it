@@ -23,6 +23,9 @@ local maxDeaths = CreateConVar("dmr_autoattach_max", "4", FCVAR_ARCHIVE,
 local keepFor = CreateConVar("dmr_autoattach_time", "30", FCVAR_ARCHIVE,
 	"Seconds a death ragdoll keeps NM before it's an ordinary ragdoll (0: till dmr_autoattach_max takes it)")
 
+local stagger = CreateConVar("dmr_death_stagger", "1", FCVAR_ARCHIVE,
+	"A bullet that kills: the body staggers as a shot one does (reaching for the wound) for a moment and then dies; a headshot flails and falls without holding a wound (0: the dying reaction, limp)")
+
 -- How recent the last hit has to be to be the killing one (s).
 local HIT_AGE = 0.5
 -- The game's push of a killing hit on an NPC, kept out of its ragdoll: Source makes up its own for a zero force
@@ -44,6 +47,30 @@ local function wanted(ent)
 	return ent:IsNPC() and npcs:GetBool()
 end
 
+-- Whether a bullet's hit on `ent` is in its head hitbox (the model's own hitboxes, a little padded).
+function DMR_IsHeadshot(ent, dmg)
+	if not (dmg:IsBulletDamage() or dmg:IsDamageType(DMG_BUCKSHOT)) then return false end
+	local pos = dmg:GetDamagePosition()
+	if pos:IsZero() or not ent.GetHitboxSet then return false end
+	local set = ent:GetHitboxSet()
+	local pad = 3
+	for i = 0, (ent:GetHitBoxCount(set) or 0) - 1 do
+		if ent:GetHitBoxHitGroup(i, set) == HITGROUP_HEAD then
+			local bone = ent:GetHitBoxBone(i, set)
+			local m = bone and ent:GetBoneMatrix(bone)
+			local mins, maxs = ent:GetHitBoxBounds(i, set)
+			if m and mins and maxs then
+				local lp = m:GetInverse() * pos
+				if lp.x >= mins.x - pad and lp.x <= maxs.x + pad and lp.y >= mins.y - pad and lp.y <= maxs.y + pad
+					and lp.z >= mins.z - pad and lp.z <= maxs.z + pad then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
 -- The hit as the room's reactions take it (reactions.lua's translation): kind, where, which way, the weapon.
 local function hitOf(ent, dmg)
 	local pos = dmg:GetDamagePosition()
@@ -54,6 +81,7 @@ local function hitOf(ent, dmg)
 	if dmg:IsBulletDamage() or dmg:IsDamageType(DMG_BUCKSHOT) then
 		local d = force:IsZero() and (pos - from) or force
 		h.kind, h.dir, h.weapon = "shot", d:GetNormalized(), DMR_WeaponOf(dmg)
+		h.head = DMR_IsHeadshot(ent, dmg)
 	elseif dmg:IsExplosionDamage() then
 		h.kind, h.centre = "blast", DMR_BlastCentre(ent, dmg, pos)
 	elseif dmg:IsDamageType(DMG_BURN) or dmg:IsDamageType(DMG_SLOWBURN) then
@@ -76,7 +104,16 @@ local function deathLines(rag, h)
 	local hit
 	if h.kind == "shot" then
 		local part = DMR_RagdollPartAt(rag, h.pos, h.dir)
+		-- A headshot: NM plays (the arms flail, it stays up a moment) without a shot's reaching for the wound; then it falls.
+		if stagger:GetBool() and h.head then
+			return { "health value=" .. FATALLY_INJURED, "button name=windmill", "button name=stayup" },
+				{ { 0.8, "button name=STOP_all" }, { 0.9, "health value=0" } }
+		end
 		hit = string.format("shot at=%s dir=%s weapon=%s%s", at(h.pos), dir(h.dir), h.weapon, part and (" part=" .. part) or "")
+		-- Any other bullet: the stagger of a shot that does not kill (reaching for the wound, standing), and then its death.
+		if stagger:GetBool() then
+			return { "health value=200", hit }, { { math.Rand(1.1, 1.8), "health value=0" } }
+		end
 	elseif h.kind == "blast" then
 		hit = "blast at=" .. at(h.centre)
 	elseif h.kind == "burn" then
@@ -133,13 +170,20 @@ end
 
 -- NM on a death ragdoll (kept on one that has it, live.lua's) and the room's lines to it (by default the killing hit
 -- `h`'s). The agent's id, or nil and why.
-local function attach(rag, h, owner, lines)
+local function attach(rag, h, owner, lines, later)
 	if not makeRoom(rag.DMR_Agent ~= nil) then return nil, "no room (dmr_autoattach_max, dmr_max_agents)" end
 	local id, why = DMR_AttachRagdoll(rag)
 	if not id then return nil, why end
 	rag.DMR_Death = true
 	corpses[#corpses + 1] = { ent = rag, owner = owner, since = CurTime() }
-	for _, line in ipairs(lines or deathLines(rag, h)) do DMR_React(rag, line) end
+	if not lines then lines, later = deathLines(rag, h) end
+	for _, line in ipairs(lines) do DMR_React(rag, line) end
+	-- What comes later (the end of a stagger: its death), if the body still has NM then.
+	for _, l in ipairs(later or {}) do
+		timer.Simple(l[1], function()
+			if IsValid(rag) and rag.DMR_Agent then DMR_React(rag, l[2]) end
+		end)
+	end
 	hook.Run("DMR_DeathRagdoll", rag, owner)
 	return id
 end
@@ -151,7 +195,7 @@ hook.Add("EntityTakeDamage", "DMR_Deaths", function(ent, dmg)
 	if ent:IsNPC() and possible() and dmg:GetDamage() >= ent:Health() then
 		ent:SetShouldServerRagdoll(true)
 		local h = ent.DMR_LastHit.kind
-		if h == "shot" or h == "blast" or h == "melee" then dmg:SetDamageForce(NO_PUSH) end
+		if (h == "shot" and not (stagger:GetBool() and ent.DMR_LastHit.head)) or h == "blast" or h == "melee" then dmg:SetDamageForce(NO_PUSH) end
 	end
 end)
 
