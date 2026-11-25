@@ -30,6 +30,8 @@ local dyingTime = CreateConVar("dmr_death_time", "60", FCVAR_ARCHIVE,
 	"Seconds (about, real time) a body shot that kills takes to die: it staggers holding the wound, stays NM's, and dies at the end (dmr_death_stagger)")
 local dyingWalk = CreateConVar("dmr_death_walk", "1", FCVAR_ARCHIVE,
 	"A dying body tries to get away from where it was shot: leaning, the balancer stepping, a leg injured; crawling once it is down (dmr_death_stagger)")
+local dyingLean = CreateConVar("dmr_death_lean", "0.12", FCVAR_ARCHIVE,
+	"How hard a dying body leans away to walk (leanInDirection's leanAmount; 0.25 is a shove that topples it)")
 local dyingDown = CreateConVar("dmr_death_down", "0", FCVAR_ARCHIVE,
 	"Seconds a dying body has to lie down before it dies, whatever time is left (0: it dies at the end of dmr_death_time only)")
 
@@ -145,8 +147,14 @@ local function walkAway(h)
 				send(rag, "injury mask=ll amount=0.35")
 			end
 			local d = Vector(away.x, away.y, 0)
-			d:Rotate(Angle(0, math.sin(CurTime() * 1.7) * 25, 0))
-			send(rag, string.format("leanInDirection start=true applyAsForce=true dir=%.3f,%.3f,0 leanAmount=0.25", d.x, d.y))
+			d:Rotate(Angle(0, math.sin(CurTime() * 1.3) * 15, 0))
+			-- On for two ticks, off for one: a lean (not a force) and then its release, the balancer stepping under it.
+			st.tick = (st.tick or 0) + 1
+			if st.tick % 3 == 0 then
+				send(rag, "leanInDirection start=false")
+			else
+				send(rag, string.format("leanInDirection start=true applyAsForce=false dir=%.3f,%.3f,0 leanAmount=%.3f", d.x, d.y, dyingLean:GetFloat()))
+			end
 		else
 			-- Down: the crawl, toward a point away (re-aimed every 2 s).
 			if not st.crawling then
@@ -191,7 +199,10 @@ local function dyingLines(h)
 		local go = walkAway(h)
 		for t = 1.8, total - 0.5, 0.5 do later[#later + 1] = { t, go } end
 	end
-	later[#later + 1] = { total, "health value=0" }
+	later[#later + 1] = { total, function(rag)
+		rag.DMR_Dying = nil
+		DMR_React(rag, "health value=0")
+	end }
 	return later, total
 end
 
@@ -223,6 +234,16 @@ local function deathLines(rag, h)
 	if not hit then return { "health value=0" } end
 	return { "health value=" .. FATALLY_INJURED, hit }
 end
+
+-- A bullet in the head of a body that is dying (staggering, walking, crawling) kills it: the room's death at once (STOP all,
+-- relax), and none of its later lines (the health steps, the walk) go on.
+hook.Add("EntityTakeDamage", "DMR_DyingHead", function(ent, dmg)
+	if not ent.DMR_Dying or ent:GetClass() ~= "prop_ragdoll" or not stagger:GetBool() then return end
+	if DMR_IsHeadshot(ent, dmg) then
+		ent.DMR_Dying = nil
+		DMR_React(ent, "health value=0")
+	end
+end)
 
 -- The death ragdolls NM is on, oldest first: {ent, owner (a player), since}.
 local corpses = {}
@@ -276,10 +297,13 @@ local function attach(rag, h, owner, lines, later, hold)
 	corpses[#corpses + 1] = { ent = rag, owner = owner, since = CurTime() + (hold or 0) }
 	if not lines then lines, later, hold = deathLines(rag, h) end
 	for _, line in ipairs(lines) do DMR_React(rag, line) end
-	-- What comes later (the end of a stagger: its death), if the body still has NM then.
+	-- What comes later (the end of a stagger: its death), if the body still has NM then and is still dying (a headshot on it
+	-- ends that: nothing of the later lines may bring its health back).
+	if hold then rag.DMR_Dying = true end
 	for _, l in ipairs(later or {}) do
 		timer.Simple(l[1], function()
 			if not (IsValid(rag) and rag.DMR_Agent) then return end
+			if hold and not rag.DMR_Dying then return end
 			if isfunction(l[2]) then l[2](rag) else DMR_React(rag, l[2]) end
 		end)
 	end

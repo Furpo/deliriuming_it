@@ -100,3 +100,9 @@ takes steps to stay up (the player had seen it do a few before falling): a stagg
 and `learnedCrawl` toward a point 150 units away from the shooter, re-aimed every 2 s (both are engine extras the module
 never sent before: a refusal is printed once as `[DMR] a dying body's walk: <message> was refused`). Written without a
 test run; the lean's strength and the crawl's look are guesses.
+
+After play (2026-11-26): (1) a headshot on a body that is already dying (`rag.DMR_Dying`: staggering, walking, crawling) is
+lethal: `health value=0` at once, and none of its later lines (the health steps, the walk) go on (they had no way to know and
+the crawl continued). (2) The lean was `applyAsForce=true leanAmount=0.25`, a continuous shove that forced the stumble and
+fall: it is now `applyAsForce=false` at `dmr_death_lean` (0.12), on for two ticks and off for one (the balancer steps under a
+lean it can follow), the wobble +-15 degrees.

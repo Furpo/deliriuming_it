@@ -122,6 +122,7 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 | `dmr_death_stagger` | 1 | a killing bullet: the body staggers as a shot one does and stays NM's for `dmr_death_time` (60) s, then dies; a headshot flails and falls without reaching for a wound (0028); 0: the dying reaction, limp |
 | `dmr_death_time` | 60 | seconds (real time, about) a body shot that kills takes to die, staying NM's (0028) |
 | `dmr_death_walk` | 1 | a dying body tries to get away from where it was shot: a lean away with a leg injured while it is up (the balancer steps), NM's injured crawl once it is down (0028) |
+| `dmr_death_lean` | 0.12 | how hard a dying body leans away to walk (0.25 was a shove that toppled it) |
 | `dmr_death_down` | 0 | seconds a dying body has to lie down before it dies early (0: it dies at the end of `dmr_death_time` only) |
 | `dmr_live_npc` | 0 | 1: shot (not killed) NPCs become ragdolls with NM, then get up; 0 (default): NPCs are NM ragdolls only when they die (`dmr_autoattach_npc`) |
 | `dmr_live_max` | 4 | NPCs that are ragdolls at once (within `dmr_max_agents`); more take shots as the game does |
