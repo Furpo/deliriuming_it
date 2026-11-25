@@ -23,12 +23,15 @@ local point = CreateConVar("dmr_point", "1", FCVAR_ARCHIVE,
 	"NM's pointArm: a ragdolled NPC swings its gun arm toward its target, as GTA IV's NM peds do")
 local armStiff = CreateConVar("dmr_arm_stiffness", "14", FCVAR_ARCHIVE, "pointArm's armStiffness (NM's default 15): how hard the arm holds the aim")
 local cone = CreateConVar("dmr_aim_cone", "30", FCVAR_ARCHIVE, "Degrees: a ragdolled NPC only fires while its gun points this close to its target")
-local aimRange = CreateConVar("dmr_aim_range", "300", FCVAR_ARCHIVE, "How close (units) something has to be, in front of the NPC's head, for a ragdolled NPC to notice it")
-local range = CreateConVar("dmr_range", "300", FCVAR_ARCHIVE, "How far (units) away whoever hit a ragdolled NPC last still is something it shoots at")
-local chance = CreateConVar("dmr_aim_chance", "0.15", FCVAR_ARCHIVE, "The chance a ragdolled NPC that notices a target goes for it (0 to 1)")
+local aimRange = CreateConVar("dmr_aim_range", "600", FCVAR_ARCHIVE, "How close (units) something has to be, in front of the NPC's head, for a ragdolled NPC to notice it")
+local range = CreateConVar("dmr_range", "900", FCVAR_ARCHIVE, "How far (units) away whoever hit a ragdolled NPC last still is something it shoots at")
+local chance = CreateConVar("dmr_aim_chance", "0.8", FCVAR_ARCHIVE, "The chance a ragdolled NPC that notices a target goes for it (0 to 1)")
 local aimTime = CreateConVar("dmr_aim_time", "3", FCVAR_ARCHIVE, "Seconds (on average) a ragdolled NPC keeps aiming before it loses interest for a while")
 local sloppy = CreateConVar("dmr_inaccuracy", "1", FCVAR_ARCHIVE, "Scale of the extra spread from the body's motion and recent hits (0: none)")
 local twoHands = CreateConVar("dmr_two_hands", "1", FCVAR_ARCHIVE, "A long gun (rifle, shotgun) is held in both hands: the left hand goes to its forend (NM's pointArm)")
+local carryOn = CreateConVar("dmr_carry", "1", FCVAR_ARCHIVE,
+	"A ragdolled NPC that is not aiming carries its gun pointing away from its body (the head's way when it lies, forward standing)")
+local carryStiff = CreateConVar("dmr_carry_stiffness", "8", FCVAR_ARCHIVE, "pointArm's armStiffness for carrying the gun (loose: the arm still swings)")
 local stun = CreateConVar("dmr_stun", "0.8", FCVAR_ARCHIVE, "Seconds after being hit before a ragdolled NPC aims and fires again")
 
 -- How often the target is looked for (s).
@@ -95,10 +98,17 @@ local function handOff(x)
 	if IsValid(x.rag) then x.rag:SetNW2Bool("DMR_TwoHands", false) end
 end
 
+-- The gun arm let go of its carrying pose.
+local function carryOff(x)
+	if x.carrying and IsValid(x.rag) and x.rag.DMR_Agent then DMR_Send(x.rag, "pointArm start=false useLeftArm=false") end
+	x.carrying = false
+end
+
 local function forget(npc)
 	local x = armedNpcs[npc]
 	if not x then return end
 	handOff(x)
+	carryOff(x)
 	armStop(x)
 	if IsValid(x.rag) then
 		x.rag:SetNW2String("DMR_GunModel", "")
@@ -303,6 +313,39 @@ local function hold(x)
 	end
 end
 
+-- The gun carried pointing away from the body: the gun arm toward where the head is (lying), or where it faces, level
+-- (standing), by NM's pointArm, loosely, sent again every 0.25 s while it is not aiming and the body is not getting up.
+-- The hand's forward is the gun's barrel: without this the arm flops and the barrel points back at its own body.
+local function carry(x)
+	local rag = x.rag
+	if not carryOn:GetBool() or not rag.DMR_Agent or rag.DMR_Rising then return carryOff(x) end
+	if x.pointing then return end
+	local now = CurTime()
+	if now < (x.nextCarry or 0) then return end
+	x.nextCarry = now + 0.25
+	local st = DMR.FollowState(rag.DMR_Agent)
+	local function pos(n)
+		local b = rag:LookupBone(n)
+		local m = b and rag:GetBoneMatrix(b)
+		return m and m:GetTranslation()
+	end
+	local sh, head, pel = pos("ValveBiped.Bip01_R_UpperArm"), pos("ValveBiped.Bip01_Head1"), pos("ValveBiped.Bip01_Pelvis")
+	if not (st and sh and head and pel) then return end
+	local spine = head - pel
+	local len = spine:Length()
+	if len < 1 then return end
+	local dir = spine / len
+	if dir.z > 0.7 then
+		-- Standing: where it faces, level.
+		local f = headForward(x)
+		local flat = Vector(f.x, f.y, 0)
+		if flat:Length() > 0.3 then dir = flat:GetNormalized() end
+	end
+	local nm = (sh + dir * 60) * M - Vector(st.origin.x, st.origin.y, st.origin.z)
+	x.carrying = DMR_Send(rag, string.format("pointArm start=true useLeftArm=false target=%.4f,%.4f,%.4f armStiffness=%g armStraightness=0.6",
+		nm.x, nm.y, nm.z, carryStiff:GetFloat())) and true or false
+end
+
 local function mode(npc, x, m)
 	if x.mode == m then return end
 	x.mode = m
@@ -332,11 +375,11 @@ local function aim(npc, x)
 		if x.mode == "idle" then
 			if t and math.random() < chance:GetFloat() then
 				x.target = t
-				x.untilT = now + math.Rand(2.5, 5.5)
+				x.untilT = now + math.Rand(1.0, 2.5)
 				mode(npc, x, "react")
 			elseif t then
 				-- It saw something and did not care: not again for a few seconds.
-				x.untilT = now + math.Rand(4, 8)
+				x.untilT = now + math.Rand(1.5, 3.5)
 				mode(npc, x, "rest")
 			end
 			return
@@ -358,7 +401,7 @@ local function aim(npc, x)
 	end
 	-- aim
 	if now >= x.untilT then
-		x.untilT = now + math.Rand(4, 8)
+		x.untilT = now + math.Rand(1.5, 3.5)
 		x.target = nil
 		mode(npc, x, "rest")
 		return armStop(x)
@@ -404,6 +447,7 @@ hook.Add("Think", "DMR_Armed", function()
 		else
 			hold(x)
 			aim(npc, x)
+			carry(x)
 			shoot(npc, x)
 		end
 	end

@@ -115,3 +115,20 @@ NM's body is meant to be the character, and a prop in it changes how the arm mov
 internals. The gun stays what it was: drawn on the clients at the right hand bone (the weapon's own bonemerge frame),
 the left hand on the forend by client IK, the fingers closed on the grip. Hand and gun can therefore go through the
 body; that is accepted.
+
+### After play (2026-11-25): which way the gun points, shooting back, standing still
+
+- **The gun pointed back at its own body.** The hand's forward axis is the barrel and follows the forearm outward (dot 0.6
+  to 0.99, measured, the NPC standing and its ragdoll alike), but a lying body's arm flops and the forearm can point at the
+  feet. The gun arm is now carried: a loose `pointArm` (`dmr_carry`, stiffness 8) toward the head's way when the body lies
+  and forward (level) when it stands, whenever it is not aiming. Frames of knocked-down Combine: the AR2 out to the side
+  or up over the shoulder, no longer back along the body.
+- **Standing still after a body shot.** A shot NPC stayed a ragdoll until the shot task was over (seconds), doing
+  nothing. One that is on its feet (head 20 units over the pelvis, slower than 1.5 m/s for 0.4 s, at least 0.9 s after the
+  hit, no blast) is now given back to its own AI (`dmr_live_upright_back`): measured, back after 0.9-1.0 s, its AI
+  enemy the player. Only a fall keeps the ragdoll.
+- **Shooting from the ground, again.** GTA IV's downed peds did not shoot in the recordings, but a player prefers a fight, so
+  the defaults are `dmr_aim_chance` 0.8, `dmr_aim_range` 600, `dmr_range` 900, a reaction of 1 to 2.5 s and 1.5 to 3.5 s
+  of rest: a knocked-down Combine 4 m from the player fired 11 shots in 3 s. NB: an archived cvar keeps the value it had
+  when the game last saved it (`cfg/server.vdf`), whatever the default has become since; a changed default needs the
+  old line removed there.

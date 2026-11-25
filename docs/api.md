@@ -127,12 +127,14 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 | `dmr_two_hands` | 1 | a long gun (AR2, SMG, shotgun) is held in both hands: the left arm on the forend (client IK, 0038) |
 | `dmr_armed` | 1 | a hostile live NPC keeps its weapon in the ragdoll's hand and shoots back (0038) |
 | `dmr_point` | 1 | NM's `pointArm` swings its gun arm toward the target |
+| `dmr_carry`, `dmr_carry_stiffness` | 1, 8 | a ragdolled NPC that is not aiming carries its gun pointing away from its body (the head's way lying, forward standing), a loose `pointArm` (0038) |
+| `dmr_live_upright_back` | 1 | a shot NPC that stays on its feet goes back to its own AI after its stagger (about 1 s), so it evades and shoots back; only one that falls stays a ragdoll |
 | `dmr_arm_stiffness` | 14 | `pointArm`'s `armStiffness` (NM's default 15) |
 | `dmr_aim_cone` | 30 | degrees: it fires only while the gun points this close to the target |
 | `dmr_stun` | 0.8 | seconds after a hit before it aims and fires again |
-| `dmr_aim_range` | 300 | units: how close something in front of its head has to be for it to notice (0038) |
-| `dmr_range` | 300 | units: how far away whoever hit it last still is a target |
-| `dmr_aim_chance`, `dmr_aim_time` | 0.15, 3 | the chance it goes for what it noticed; seconds it aims before it loses interest for a while |
+| `dmr_aim_range` | 600 | units: how close something in front of its head has to be for it to notice (0038) |
+| `dmr_range` | 900 | units: how far away whoever hit it last still is a target |
+| `dmr_aim_chance`, `dmr_aim_time` | 0.8, 3 | the chance it goes for what it noticed; seconds it aims before it loses interest for a while |
 | `dmr_inaccuracy` | 1 | the scale of the extra spread from the body's speed and recent hits (0: none) |
 | `dmr_gun_off_fwd/right/up/pitch/yaw/roll` (client) | 4, -1, 0, 0, 0, 180 | where the drawn gun sits in the hand's bone frame |
 

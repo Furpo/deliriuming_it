@@ -23,6 +23,9 @@ local liveTime = CreateConVar("dmr_live_time", "30", FCVAR_ARCHIVE,
 local shootable = CreateConVar("dmr_live_shootable", "1", FCVAR_ARCHIVE,
 	"Other NPCs that are hostile to a ragdolled NPC (Combine against rebels and back) shoot it until it is finished off")
 
+local upBack = CreateConVar("dmr_live_upright_back", "1", FCVAR_ARCHIVE,
+	"A shot NPC that stays on its feet is given back to its own AI after its stagger (it evades, takes cover, shoots back); only one that falls stays a ragdoll")
+
 -- A body settled: its centre of mass slower than SETTLED (m/s) for STAND_FOR s balancing, LIE_FOR s not, after at
 -- least MIN_FOR s as a ragdoll. How often it's looked at (s).
 local SETTLED, STAND_FOR, LIE_FOR, MIN_FOR = 0.3, 0.5, 1.5, 1
@@ -411,10 +414,19 @@ hook.Add("Think", "DMR_Live", function()
 					else
 						l.still = l.still + STEP
 					end
+					-- On its feet after the stagger: its own AI again (it does not stand there as a ragdoll while being shot at).
+					local hb, pb = rag:LookupBone("ValveBiped.Bip01_Head1"), rag:LookupBone("ValveBiped.Bip01_Pelvis")
+					local hm, pm = hb and rag:GetBoneMatrix(hb), pb and rag:GetBoneMatrix(pb)
+					if upBack:GetBool() and hm and pm and not r.rising and not r.blast and hm:GetTranslation().z - pm:GetTranslation().z > 20 and v < 1.5 then
+						l.upFor = (l.upFor or 0) + STEP
+					else
+						l.upFor = 0
+					end
+					local early = age >= 0.9 and l.upFor >= 0.4
 					-- Lying, the room gets it up (the clip, retargeted onto the body: module/src/follow/retarget.rs) and it is
 					-- given back standing once it balances; only with the get-up off does it stand up where it lay.
 					local need = s.balancing and STAND_FOR or (r.getup ~= "off" and GETUP_WAIT or LIE_FOR)
-					if age >= MIN_FOR and l.still >= need then finish(ent) end
+					if early or (age >= MIN_FOR and l.still >= need) then finish(ent) end
 				end
 			end
 		end
