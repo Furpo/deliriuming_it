@@ -28,6 +28,8 @@ local stagger = CreateConVar("dmr_death_stagger", "1", FCVAR_ARCHIVE,
 
 local dyingTime = CreateConVar("dmr_death_time", "60", FCVAR_ARCHIVE,
 	"Seconds (about, real time) a body shot that kills takes to die: it staggers holding the wound, stays NM's, and dies at the end (dmr_death_stagger)")
+local dyingWalk = CreateConVar("dmr_death_walk", "1", FCVAR_ARCHIVE,
+	"A dying body tries to get away from where it was shot: leaning, the balancer stepping, a leg injured; crawling once it is down (dmr_death_stagger)")
 local dyingDown = CreateConVar("dmr_death_down", "0", FCVAR_ARCHIVE,
 	"Seconds a dying body has to lie down before it dies, whatever time is left (0: it dies at the end of dmr_death_time only)")
 
@@ -104,11 +106,68 @@ DMR_HitOf = hitOf
 -- dying reaction, no getting up), then the hit as the room takes it, its damage on that health (at 0 the room's death).
 -- No hit known (a fall, a crush, `kill`): just its death.
 local FATALLY_INJURED = 49
+-- A dying body getting away from the shooter (hit `h`): upright, a lean away (NM's balancer takes steps to keep it up: a
+-- stagger-walk) with a leg injured (a limp), re-aimed every half second with a little wobble; down, NM's own injured
+-- crawl (`injuredOnGround`, `learnedCrawl`) toward a point away. NM messages straight to the body; a refused one is
+-- said once on the console.
+local function walkAway(h)
+	local st = { injured = false, crawling = false, lastCrawl = 0, warned = false }
+	local function send(rag, line)
+		local ok, err = DMR_Send(rag, line)
+		if (not ok or err == false) and not st.warned then
+			st.warned = true
+			print("[DMR] a dying body's walk: " .. line:match("^%S+") .. " was refused: " .. tostring(err))
+		end
+		return ok and err ~= false
+	end
+	return function(rag)
+		local function pos(n)
+			local b = rag:LookupBone(n)
+			local m = b and rag:GetBoneMatrix(b)
+			return m and m:GetTranslation()
+		end
+		local head, pel = pos("ValveBiped.Bip01_Head1"), pos("ValveBiped.Bip01_Pelvis")
+		local fs = DMR.FollowState(rag.DMR_Agent)
+		if not (head and pel and fs) then return end
+		-- Away from where the shot came from (level).
+		local away = Vector(pel.x - h.from.x, pel.y - h.from.y, 0)
+		if away:Length() < 1 then away = Vector(1, 0, 0) end
+		away:Normalize()
+		if head.z - pel.z > 20 then
+			-- On its feet: the lean, the injured leg.
+			if st.crawling then
+				st.crawling = false
+				send(rag, "learnedCrawl start=false")
+				send(rag, "injuredOnGround start=false")
+			end
+			if not st.injured then
+				st.injured = true
+				send(rag, "injury mask=ll amount=0.35")
+			end
+			local d = Vector(away.x, away.y, 0)
+			d:Rotate(Angle(0, math.sin(CurTime() * 1.7) * 25, 0))
+			send(rag, string.format("leanInDirection start=true applyAsForce=true dir=%.3f,%.3f,0 leanAmount=0.25", d.x, d.y))
+		else
+			-- Down: the crawl, toward a point away (re-aimed every 2 s).
+			if not st.crawling then
+				st.crawling = true
+				send(rag, "leanInDirection start=false")
+				send(rag, "injuredOnGround start=true numInjuries=1")
+			end
+			if CurTime() - st.lastCrawl > 2 then
+				st.lastCrawl = CurTime()
+				local target = (pel + away * 150) * M - Vector(fs.origin.x, fs.origin.y, fs.origin.z)
+				send(rag, string.format("learnedCrawl start=true speed=0.6 targetPosition=%.3f,%.3f,%.3f", target.x, target.y, target.z))
+			end
+		end
+	end
+end
+
 -- The body's dying: one hit (the shot's stagger, reaching for the wound: the room's ShotTask) and then no more hits (each
 -- restarted the whole shot reaction, arms waving like a seizure). The room's health only falls in steps (`health value=`,
 -- no hit), the body staying NM's, and it dies (`health value=0`, the room's death: limp) at the end of about
 -- dmr_death_time s (or sooner once it has lain down dmr_death_down s, if that is set). The lines to come and the total.
-local function dyingLines()
+local function dyingLines(h)
 	local total = math.max(1.5, dyingTime:GetFloat()) * math.Rand(0.9, 1.1)
 	local step = math.max(0.5, total / 30)
 	local n = math.max(2, math.floor(total / step))
@@ -128,6 +187,10 @@ local function dyingLines()
 			end }
 		end
 	end
+	if dyingWalk:GetBool() and h and h.from then
+		local go = walkAway(h)
+		for t = 1.8, total - 0.5, 0.5 do later[#later + 1] = { t, go } end
+	end
 	later[#later + 1] = { total, "health value=0" }
 	return later, total
 end
@@ -145,7 +208,7 @@ local function deathLines(rag, h)
 		hit = string.format("shot at=%s dir=%s weapon=%s%s", at(h.pos), dir(h.dir), h.weapon, part and (" part=" .. part) or "")
 		-- Any other bullet: the stagger of a shot that does not kill (reaching for the wound, standing), and then its death.
 		if stagger:GetBool() then
-			local later, total = dyingLines()
+			local later, total = dyingLines(h)
 			return { "health value=200", hit }, later, total
 		end
 	elseif h.kind == "blast" then

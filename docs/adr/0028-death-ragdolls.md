@@ -92,3 +92,11 @@ Later (2026-11-26): `dmr_death_time` is 60 s (the player's choice: a minute of r
 keeps NM for it whatever `dmr_autoattach_time` (30 s) says (that counts from its death) and `dmr_autoattach_max` is 8 (a
 dying body is one of them for the minute; the ninth would take NM off the oldest). `dmr_death_down` (default 0, off): the
 earlier "dies once it has lain down 1.5 s".
+
+Later (2026-11-26): **trying to get away** (`dmr_death_walk`, deaths.lua `walkAway`). Every half second from 1.8 s of a body-shot
+death, to its end: upright (head over 20 units above the pelvis), `injury mask=ll amount=0.35` once and `leanInDirection
+start=true applyAsForce=true dir=<away from the shooter, with a wobble of +-25 degrees> leanAmount=0.25`, so NM's balancer
+takes steps to stay up (the player had seen it do a few before falling): a stagger-walk with a limp; down, `injuredOnGround`
+and `learnedCrawl` toward a point 150 units away from the shooter, re-aimed every 2 s (both are engine extras the module
+never sent before: a refusal is printed once as `[DMR] a dying body's walk: <message> was refused`). Written without a
+test run; the lean's strength and the crawl's look are guesses.
