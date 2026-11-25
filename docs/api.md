@@ -119,7 +119,7 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 
 | Convar | Default | What |
 |---|---|---|
-| `dmr_live_npc` | 1 | shot NPCs become ragdolls with NM, then get up |
+| `dmr_live_npc` | 0 | 1: shot (not killed) NPCs become ragdolls with NM, then get up; 0 (default): NPCs are NM ragdolls only when they die (`dmr_autoattach_npc`) |
 | `dmr_live_max` | 4 | NPCs that are ragdolls at once (within `dmr_max_agents`); more take shots as the game does |
 | `dmr_live_time` | 30 | seconds at most an NPC stays a ragdoll; lying, it is given back once it has got up by the clip (0037) |
 | `dmr_zombies` | 0 | 1: zombies (class with "zombie") get NM ragdolls like other humanoids; 0 they keep the game's |

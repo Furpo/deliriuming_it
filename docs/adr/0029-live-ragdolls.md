@@ -89,3 +89,10 @@ seconds at once: it "teleported away" 100-130 units in one tick (seen in about a
 the NPC had been chasing the player). `show()` now resets `m_flTimeLastMovement` to FLT_MAX (the NPC's own "has not
 moved"), stops its movement and clears its schedule. Four hand-backs after the change showed no jump.
 
+
+## Later: off by default (2026-11-26)
+
+Taking an NPC into its ragdoll on every shot that does not kill it (`dmr_live_npc`) made shot NPCs stand there staggering
+instead of evading or shooting back, so it is off by default: NPCs are ragdolls with NM only when they die (death
+ragdolls, `dmr_autoattach_npc`, ADR 0028). The live bodies, the get-up and the armed ragdolls (0037, 0038) stay in the
+code for `dmr_live_npc 1` and `dmr_drunk`.

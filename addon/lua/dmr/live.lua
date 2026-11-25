@@ -13,8 +13,8 @@
 local M = 0.0254
 local say = DMR_Say
 
-local liveNpc = CreateConVar("dmr_live_npc", "1", { FCVAR_ARCHIVE, FCVAR_REPLICATED },
-	"A humanoid NPC shot (not killed) becomes its ragdoll with NM, the Playroom's reaction to the shot, then gets up where the body is")
+local liveNpc = CreateConVar("dmr_live_npc", "0", { FCVAR_ARCHIVE, FCVAR_REPLICATED },
+	"A humanoid NPC shot (not killed) becomes its ragdoll with NM, the Playroom's reaction to the shot, then gets up where the body is (off: NPCs are ragdolls with NM only when they die)")
 local liveMax = CreateConVar("dmr_live_max", "4", FCVAR_ARCHIVE,
 	"NPCs that are ragdolls with NM at once (within dmr_max_agents); more take their shots as the game does")
 local liveTime = CreateConVar("dmr_live_time", "30", FCVAR_ARCHIVE,
