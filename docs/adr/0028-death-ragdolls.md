@@ -116,3 +116,9 @@ holds the body in its crawl pose without ground. Now, every tick of the walk: th
 50 units ahead (a trace down 60 units from 12 above; else the way turned 60, 120 degrees either side; none: the body stays),
 and a down body with no ground under its pelvis (30 units) gets `learnedCrawl start=false` and falls, crawling again where it
 lands.
+
+(2026-11-26, chances and drops) Avoiding drops was dropped (the player wanted bodies to crawl over them): the crawl goes on
+over an edge, only letting go of the body when there is no ground under its pelvis (so it is never held in the air) and
+starting again where it lands. Whether a dying body walks while up (`dmr_death_walk_chance`) and whether it crawls while
+down (`dmr_death_crawl_chance`) is rolled once for each, with a crawl speed of 0.45 to 0.85 and a pause of 0.4 to 2.5 s
+before it starts.

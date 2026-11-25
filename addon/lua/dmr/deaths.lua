@@ -30,6 +30,10 @@ local dyingTime = CreateConVar("dmr_death_time", "60", FCVAR_ARCHIVE,
 	"Seconds (about, real time) a body shot that kills takes to die: it staggers holding the wound, stays NM's, and dies at the end (dmr_death_stagger)")
 local dyingWalk = CreateConVar("dmr_death_walk", "1", FCVAR_ARCHIVE,
 	"A dying body tries to get away from where it was shot: leaning, the balancer stepping, a leg injured; crawling once it is down (dmr_death_stagger)")
+local walkChance = CreateConVar("dmr_death_walk_chance", "0.7", FCVAR_ARCHIVE,
+	"The chance a dying body, upright, tries to walk away (rolled once for each; 0 to 1)")
+local crawlChance = CreateConVar("dmr_death_crawl_chance", "0.7", FCVAR_ARCHIVE,
+	"The chance a dying body that is down tries to crawl away (rolled once for each; 0 to 1)")
 local dyingLean = CreateConVar("dmr_death_lean", "0.12", FCVAR_ARCHIVE,
 	"How hard a dying body leans away to walk (leanInDirection's leanAmount; 0.25 is a shove that topples it)")
 local dyingDown = CreateConVar("dmr_death_down", "0", FCVAR_ARCHIVE,
@@ -114,22 +118,17 @@ local function groundUnder(rag, p, depth)
 	return tr.Hit
 end
 
--- The way to go: `away` if there is ground ahead of the body that way (a drop of more than ~50 units is not ground), else
--- the nearest of the ways turned 60, 120 degrees either side that has some; nil if there is none (it stays where it is).
-local function wayWithGround(rag, pel, away)
-	for _, turn in ipairs({ 0, 60, -60, 120, -120 }) do
-		local d = Vector(away.x, away.y, 0)
-		d:Rotate(Angle(0, turn, 0))
-		if groundUnder(rag, pel + d * 50 + Vector(0, 0, 12), 60) then return d end
-	end
-end
-
 -- A dying body getting away from the shooter (hit `h`): upright, a lean away (NM's balancer takes steps to keep it up: a
 -- stagger-walk) with a leg injured (a limp), re-aimed every half second with a little wobble; down, NM's own injured
 -- crawl (`injuredOnGround`, `learnedCrawl`) toward a point away. NM messages straight to the body; a refused one is
 -- said once on the console.
 local function walkAway(h)
-	local st = { injured = false, crawling = false, lastCrawl = 0, warned = false }
+	local st = {
+		injured = false, crawling = false, lastCrawl = 0, warned = false,
+		-- Rolled once for this body: whether it walks, whether it crawls, how fast, how long it lies before it starts.
+		walks = math.random() < walkChance:GetFloat(), crawls = math.random() < crawlChance:GetFloat(),
+		speed = math.Rand(0.45, 0.85), crawlDelay = math.Rand(0.4, 2.5),
+	}
 	local function send(rag, line)
 		local ok, err = DMR_Send(rag, line)
 		if (not ok or err == false) and not st.warned then
@@ -153,16 +152,17 @@ local function walkAway(h)
 		away:Normalize()
 		if head.z - pel.z > 20 then
 			-- On its feet: the lean, the injured leg.
+			st.downSince = nil
 			if st.crawling then
 				st.crawling = false
 				send(rag, "learnedCrawl start=false")
 			end
-			if not st.injured then
+			if not st.injured and st.walks then
 				st.injured = true
 				send(rag, "injury mask=ll amount=0.35")
 			end
-			local d = wayWithGround(rag, pel, away)
-			if not d then return send(rag, "leanInDirection start=false") end
+			if not st.walks then return end
+			local d = Vector(away.x, away.y, 0)
 			d:Rotate(Angle(0, math.sin(CurTime() * 1.3) * 15, 0))
 			-- On for two ticks, off for one: a lean (not a force) and then its release, the balancer stepping under it.
 			st.tick = (st.tick or 0) + 1
@@ -173,13 +173,16 @@ local function walkAway(h)
 			end
 		else
 			-- Down: the crawl alone (injuredOnGround rolls the body between face down, face up and its sides to reach the
-			-- wound, which fought the crawl: it kept changing its style). Started once toward a point away, and aimed
-			-- again only when the way away has turned 35 degrees or more (or every 10 s), not every few seconds.
-			-- No ground under it (over an edge): the crawl drive would hold it flat in the air. It stops and the body falls;
-			-- it crawls again where it lands.
+			-- wound, which fought the crawl: it kept changing its style). Only if this body rolled to, after a pause of its
+			-- own, at its own speed; started once toward a point away, and aimed again only when the way away has turned
+			-- 35 degrees or more (or every 10 s). Over a drop it crawls on: but with no ground under the pelvis the drive
+			-- is let go of (it would hold the body flat in the air) and the body falls; it crawls again where it lands.
+			if not st.crawls then return end
+			st.downSince = st.downSince or CurTime()
+			if CurTime() - st.downSince < st.crawlDelay then return end
 			if not groundUnder(rag, pel, 30) then
 				if st.crawling then
-					st.crawling, st.heading = false, nil
+					st.crawling, st.heading, st.downSince = false, nil, CurTime() - st.crawlDelay
 					send(rag, "learnedCrawl start=false")
 				end
 				return
@@ -189,21 +192,11 @@ local function walkAway(h)
 				send(rag, "leanInDirection start=false")
 				st.heading = nil
 			end
-			-- Not toward a drop.
-			local go = wayWithGround(rag, pel, away)
-			if not go then
-				if st.heading then
-					st.heading = nil
-					send(rag, "learnedCrawl start=false")
-				end
-				return
-			end
-			away = go
 			local turned = not st.heading or st.heading:Dot(away) < 0.82
 			if turned or CurTime() - st.lastCrawl > 10 then
 				st.lastCrawl, st.heading = CurTime(), away
 				local target = (pel + away * 150) * M - Vector(fs.origin.x, fs.origin.y, fs.origin.z)
-				send(rag, string.format("learnedCrawl start=true speed=0.6 targetPosition=%.3f,%.3f,%.3f", target.x, target.y, target.z))
+				send(rag, string.format("learnedCrawl start=true speed=%.2f targetPosition=%.3f,%.3f,%.3f", st.speed, target.x, target.y, target.z))
 			end
 		end
 	end
