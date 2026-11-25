@@ -26,6 +26,9 @@ local keepFor = CreateConVar("dmr_autoattach_time", "30", FCVAR_ARCHIVE,
 local stagger = CreateConVar("dmr_death_stagger", "1", FCVAR_ARCHIVE,
 	"A bullet that kills: the body staggers as a shot one does (reaching for the wound) for a moment and then dies; a headshot flails and falls without holding a wound (0: the dying reaction, limp)")
 
+local dyingTime = CreateConVar("dmr_death_time", "6", FCVAR_ARCHIVE,
+	"Seconds (about) a body shot that kills takes to die: it staggers holding the wound, weakens, and dies at the end (dmr_death_stagger)")
+
 -- How recent the last hit has to be to be the killing one (s).
 local HIT_AGE = 0.5
 -- The game's push of a killing hit on an NPC, kept out of its ragdoll: Source makes up its own for a zero force
@@ -99,6 +102,24 @@ DMR_HitOf = hitOf
 -- dying reaction, no getting up), then the hit as the room takes it, its damage on that health (at 0 the room's death).
 -- No hit known (a fall, a crush, `kill`): just its death.
 local FATALLY_INJURED = 49
+-- The body's dying as the room takes it: the shot's stagger (reaching for the wound) is the room's ShotTask, whose state
+-- (standing, injured, fatally injured) is the health it finds when a hit lands. So the dying is the killing hit again
+-- every second and a half on a health that falls from 200 to 0 over about dmr_death_time s (a body staggering,
+-- weakening, going down, reaching for the wound), and `health value=0` at the end, the room's death. The body stays NM's
+-- the whole time.
+local function dyingLines(hit)
+	local total = math.max(1.5, dyingTime:GetFloat()) * math.Rand(0.85, 1.15)
+	local n = math.max(1, math.floor(total / 1.5))
+	local later = {}
+	for i = 1, n do
+		local t = i * total / (n + 1)
+		later[#later + 1] = { t, "health value=" .. math.max(1, math.floor(200 * (1 - i / (n + 1)))) }
+		later[#later + 1] = { t + 0.02, hit }
+	end
+	later[#later + 1] = { total, "health value=0" }
+	return later
+end
+
 local function deathLines(rag, h)
 	if not h or CurTime() - h.time > HIT_AGE then return { "health value=0" } end
 	local hit
@@ -112,7 +133,7 @@ local function deathLines(rag, h)
 		hit = string.format("shot at=%s dir=%s weapon=%s%s", at(h.pos), dir(h.dir), h.weapon, part and (" part=" .. part) or "")
 		-- Any other bullet: the stagger of a shot that does not kill (reaching for the wound, standing), and then its death.
 		if stagger:GetBool() then
-			return { "health value=200", hit }, { { math.Rand(1.1, 1.8), "health value=0" } }
+			return { "health value=200", hit }, dyingLines(hit)
 		end
 	elseif h.kind == "blast" then
 		hit = "blast at=" .. at(h.centre)

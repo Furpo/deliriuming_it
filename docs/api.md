@@ -119,7 +119,8 @@ button on it, the camera on the body as the death camera (the mouse turns it), t
 
 | Convar | Default | What |
 |---|---|---|
-| `dmr_death_stagger` | 1 | a killing bullet: the body staggers as a shot one does for 1.1 to 1.8 s, then dies; a headshot flails and falls without reaching for a wound (0028); 0: the dying reaction, limp |
+| `dmr_death_stagger` | 1 | a killing bullet: the body staggers as a shot one does and weakens over `dmr_death_time` (6) s, still NM, then dies; a headshot flails and falls without reaching for a wound (0028); 0: the dying reaction, limp |
+| `dmr_death_time` | 6 | seconds a body shot that kills takes to die (0028) |
 | `dmr_live_npc` | 0 | 1: shot (not killed) NPCs become ragdolls with NM, then get up; 0 (default): NPCs are NM ragdolls only when they die (`dmr_autoattach_npc`) |
 | `dmr_live_max` | 4 | NPCs that are ragdolls at once (within `dmr_max_agents`); more take shots as the game does |
 | `dmr_live_time` | 30 | seconds at most an NPC stays a ragdoll; lying, it is given back once it has got up by the clip (0037) |
