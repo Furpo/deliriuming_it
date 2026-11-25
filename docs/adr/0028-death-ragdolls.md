@@ -78,10 +78,12 @@ does (other kills as above):
 - **A headshot** (the hit in the model's head hitbox, `DMR_IsHeadshot`, padded 3 units): no `shot` (no reaching for a
   wound): the game's own push on the body stays (the room's impulse is not used), the room is at 49 (no getting up), arms
   windmill and the body stays up 0.8 s, `STOP all`, then `health value=0`: it falls limp.
-- **Any other bullet:** a dying that takes about `dmr_death_time` (6 s): the stagger a shot that does not kill gets (the
-  room at health 200, the `shot` reaction: standing, reaching for the wound), then the killing hit again every 1.5 s on a
-  health falling to 0 (the ShotTask's state is the health it finds when a hit lands: standing, injured, fatally
-  injured), and `health value=0` at the end: the death. The body stays NM's throughout. (The first version was 1.1 to
-  1.8 s and the player found it dropped too soon.)
+- **Any other bullet:** one hit, the stagger a shot that does not kill gets (the room at health 200, the `shot`
+  reaction: standing, reaching for the wound), and then **no more hits**: the room's health falls in steps of half a second
+  (`health value=`, which is only a number) over about `dmr_death_time` (6 s) and `health value=0` ends it, the room's
+  death (limp), or sooner once the body is down (head under 18 units over the pelvis) and has lain there 1.5 s. The body
+  stays NM's throughout. (Two earlier versions: the stagger for 1.1 to 1.8 s, which dropped too soon; the killing hit
+  repeated every 1.5 s, which restarted the whole shot reaction each time, the arms waving like a seizure. The room
+  chooses stagger or relax when a hit lands, so health alone does not change what the body does.)
 
 Not tried in game when written (the player asked for no tests): the timings are first guesses.

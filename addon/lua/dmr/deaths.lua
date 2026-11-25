@@ -102,19 +102,26 @@ DMR_HitOf = hitOf
 -- dying reaction, no getting up), then the hit as the room takes it, its damage on that health (at 0 the room's death).
 -- No hit known (a fall, a crush, `kill`): just its death.
 local FATALLY_INJURED = 49
--- The body's dying as the room takes it: the shot's stagger (reaching for the wound) is the room's ShotTask, whose state
--- (standing, injured, fatally injured) is the health it finds when a hit lands. So the dying is the killing hit again
--- every second and a half on a health that falls from 200 to 0 over about dmr_death_time s (a body staggering,
--- weakening, going down, reaching for the wound), and `health value=0` at the end, the room's death. The body stays NM's
--- the whole time.
-local function dyingLines(hit)
+-- The body's dying: one hit (the shot's stagger, reaching for the wound: the room's ShotTask) and then no more hits (each
+-- restarted the whole shot reaction, arms waving like a seizure). The room's health only falls in steps (`health value=`,
+-- no hit), the body staying NM's, and it dies (`health value=0`, the room's death: limp) at the end of about
+-- dmr_death_time s, or sooner once it lies down and has lain there 1.5 s.
+local function dyingLines()
 	local total = math.max(1.5, dyingTime:GetFloat()) * math.Rand(0.85, 1.15)
-	local n = math.max(1, math.floor(total / 1.5))
+	local n = math.max(2, math.floor(total / 0.5))
 	local later = {}
-	for i = 1, n do
-		local t = i * total / (n + 1)
-		later[#later + 1] = { t, "health value=" .. math.max(1, math.floor(200 * (1 - i / (n + 1)))) }
-		later[#later + 1] = { t + 0.02, hit }
+	for i = 1, n - 1 do
+		later[#later + 1] = { i * total / n, "health value=" .. math.max(1, math.floor(200 * (1 - i / n))) }
+	end
+	-- Down and still: its death.
+	local lying = 0
+	for t = 2.0, total, 0.5 do
+		later[#later + 1] = { t, function(rag)
+			local hb, pb = rag:LookupBone("ValveBiped.Bip01_Head1"), rag:LookupBone("ValveBiped.Bip01_Pelvis")
+			local hm, pm = hb and rag:GetBoneMatrix(hb), pb and rag:GetBoneMatrix(pb)
+			if hm and pm and hm:GetTranslation().z - pm:GetTranslation().z < 18 then lying = lying + 0.5 else lying = 0 end
+			if lying >= 1.5 then DMR_React(rag, "health value=0") end
+		end }
 	end
 	later[#later + 1] = { total, "health value=0" }
 	return later
@@ -133,7 +140,7 @@ local function deathLines(rag, h)
 		hit = string.format("shot at=%s dir=%s weapon=%s%s", at(h.pos), dir(h.dir), h.weapon, part and (" part=" .. part) or "")
 		-- Any other bullet: the stagger of a shot that does not kill (reaching for the wound, standing), and then its death.
 		if stagger:GetBool() then
-			return { "health value=200", hit }, dyingLines(hit)
+			return { "health value=200", hit }, dyingLines()
 		end
 	elseif h.kind == "blast" then
 		hit = "blast at=" .. at(h.centre)
@@ -202,7 +209,8 @@ local function attach(rag, h, owner, lines, later)
 	-- What comes later (the end of a stagger: its death), if the body still has NM then.
 	for _, l in ipairs(later or {}) do
 		timer.Simple(l[1], function()
-			if IsValid(rag) and rag.DMR_Agent then DMR_React(rag, l[2]) end
+			if not (IsValid(rag) and rag.DMR_Agent) then return end
+			if isfunction(l[2]) then l[2](rag) else DMR_React(rag, l[2]) end
 		end)
 	end
 	hook.Run("DMR_DeathRagdoll", rag, owner)
