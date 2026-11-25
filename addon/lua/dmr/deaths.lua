@@ -108,6 +108,22 @@ DMR_HitOf = hitOf
 -- dying reaction, no getting up), then the hit as the room takes it, its damage on that health (at 0 the room's death).
 -- No hit known (a fall, a crush, `kill`): just its death.
 local FATALLY_INJURED = 49
+-- Ground under a point (units): something solid within `depth` below it.
+local function groundUnder(rag, p, depth)
+	local tr = util.TraceLine({ start = p, endpos = p - Vector(0, 0, depth), mask = MASK_SOLID, filter = rag })
+	return tr.Hit
+end
+
+-- The way to go: `away` if there is ground ahead of the body that way (a drop of more than ~50 units is not ground), else
+-- the nearest of the ways turned 60, 120 degrees either side that has some; nil if there is none (it stays where it is).
+local function wayWithGround(rag, pel, away)
+	for _, turn in ipairs({ 0, 60, -60, 120, -120 }) do
+		local d = Vector(away.x, away.y, 0)
+		d:Rotate(Angle(0, turn, 0))
+		if groundUnder(rag, pel + d * 50 + Vector(0, 0, 12), 60) then return d end
+	end
+end
+
 -- A dying body getting away from the shooter (hit `h`): upright, a lean away (NM's balancer takes steps to keep it up: a
 -- stagger-walk) with a leg injured (a limp), re-aimed every half second with a little wobble; down, NM's own injured
 -- crawl (`injuredOnGround`, `learnedCrawl`) toward a point away. NM messages straight to the body; a refused one is
@@ -145,7 +161,8 @@ local function walkAway(h)
 				st.injured = true
 				send(rag, "injury mask=ll amount=0.35")
 			end
-			local d = Vector(away.x, away.y, 0)
+			local d = wayWithGround(rag, pel, away)
+			if not d then return send(rag, "leanInDirection start=false") end
 			d:Rotate(Angle(0, math.sin(CurTime() * 1.3) * 15, 0))
 			-- On for two ticks, off for one: a lean (not a force) and then its release, the balancer stepping under it.
 			st.tick = (st.tick or 0) + 1
@@ -158,10 +175,30 @@ local function walkAway(h)
 			-- Down: the crawl alone (injuredOnGround rolls the body between face down, face up and its sides to reach the
 			-- wound, which fought the crawl: it kept changing its style). Started once toward a point away, and aimed
 			-- again only when the way away has turned 35 degrees or more (or every 10 s), not every few seconds.
+			-- No ground under it (over an edge): the crawl drive would hold it flat in the air. It stops and the body falls;
+			-- it crawls again where it lands.
+			if not groundUnder(rag, pel, 30) then
+				if st.crawling then
+					st.crawling, st.heading = false, nil
+					send(rag, "learnedCrawl start=false")
+				end
+				return
+			end
 			if not st.crawling then
 				st.crawling = true
 				send(rag, "leanInDirection start=false")
+				st.heading = nil
 			end
+			-- Not toward a drop.
+			local go = wayWithGround(rag, pel, away)
+			if not go then
+				if st.heading then
+					st.heading = nil
+					send(rag, "learnedCrawl start=false")
+				end
+				return
+			end
+			away = go
 			local turned = not st.heading or st.heading:Dot(away) < 0.82
 			if turned or CurTime() - st.lastCrawl > 10 then
 				st.lastCrawl, st.heading = CurTime(), away

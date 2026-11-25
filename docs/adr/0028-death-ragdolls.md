@@ -110,3 +110,9 @@ lean it can follow), the wobble +-15 degrees.
 (2026-11-26, later) The crawl kept changing its style (stomach, left side, right side): `injuredOnGround` rolls the body
 between face down, face up and its sides to reach the wound, against `learnedCrawl`'s stomach crawl. Down, a body now gets
 `learnedCrawl` alone, started once and aimed again only when the way away has turned 35 degrees (or every 10 s), not every 2 s.
+
+(2026-11-26, ledges) A body crawled off a roof's edge and hung flat in mid-air: the crawl drive does not know about drops and
+holds the body in its crawl pose without ground. Now, every tick of the walk: the way away is taken only where there is ground
+50 units ahead (a trace down 60 units from 12 above; else the way turned 60, 120 degrees either side; none: the body stays),
+and a down body with no ground under its pelvis (30 units) gets `learnedCrawl start=false` and falls, crawling again where it
+lands.
